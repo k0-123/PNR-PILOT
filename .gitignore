@@ -1,0 +1,22 @@
+# Secrets & data — never commit
+.env
+data/
+
+# Debug screenshots (may contain real passenger names / PNRs)
+image.png
+image copy*.png
+*.screenshot.png
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / extension build
+node_modules/
+extension/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db

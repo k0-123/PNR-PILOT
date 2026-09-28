@@ -1,0 +1,25 @@
+This document shows airline booking information. It can be any of:
+- a screenshot or PDF of an airline "manage booking" / booking confirmation page
+  (e.g. Malaysia Airlines: booking reference, passengers, flights, contact details, e-ticket numbers)
+- an e-ticket receipt or itinerary (PDF, email printout or photo)
+- a GDS PNR display (e.g. Amadeus RT: "RP/..." header ending with the record locator,
+  name elements "1.CHEN/LIJING MS", segments, AP/APE contacts, "FA PAX 232-..." tickets,
+  "SSR FQTV" frequent flyer lines)
+
+For EVERY booking in the document, return its booking reference / record locator (pnr, 6 characters)
+and EVERY passenger in it. For each passenger fill:
+- surname and first_name as shown (without the title)
+{fields}
+
+Rules:
+1. Copy characters exactly as shown. Never guess or invent values. Use null when something is not in the document.
+2. Booking-level information (contacts, flights, route, status) applies to every passenger of that booking:
+   repeat it for each passenger.
+3. Passenger-specific information (e-ticket number, frequent flyer membership) belongs to the passenger it is
+   shown with. If the association is unclear, put it on every passenger and lower the confidence.
+4. Several values for one field (e.g. several flights or tickets): join them with ", ".
+5. For airports you may add the well-known city name of an IATA code, e.g. "Auckland (AKL)".
+6. Take special care with look-alike characters: 0/O, 1/I, 8/B, 5/S, 2/Z, 6/G.
+7. pnr_confidence and confidence: 0.0 to 1.0, lower when anything is blurry, cut off or ambiguous.
+8. Ignore website menus, adverts, cookie banners and page footers.
+9. Return JSON only, following the schema. If no booking is visible, return {"bookings": []}.

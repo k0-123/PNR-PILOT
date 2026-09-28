@@ -1,0 +1,18 @@
+# Result fields matching the mock booking site's result page (tests only).
+fields:
+  - key: flight_numbers
+    label: "Flight Number(s)"
+    description: "All flight numbers in the booking"
+  - key: route
+    label: "Route"
+    description: "Origin -> destination airports"
+  - key: travel_dates
+    label: "Travel Date(s)"
+  - key: booking_status
+    label: "Booking Status"
+  - key: ticket_numbers
+    label: "Ticket Number(s)"
+    scope: passenger
+  - key: passenger_names
+    label: "Passenger Names"
+    scope: passenger

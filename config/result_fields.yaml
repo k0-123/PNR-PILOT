@@ -1,0 +1,35 @@
+# Fields Gemini extracts from the booking result page (Malaysia Airlines manage booking).
+# The Gemini result schema/prompt and the final Excel columns are generated from this list.
+# key: lowercase snake_case (used in JSON); label: Excel column header.
+# scope: passenger = differs per person on the booking (goes to that person's row);
+#        booking   = same for everyone on the PNR (goes to every row with that PNR). Default: booking.
+# Several passengers/tickets on one booking are joined with ", ".
+
+fields:
+  - key: full_name
+    label: "Full Name"
+    description: "Full passenger name(s) with title exactly as shown on the booking, e.g. MS LIJING CHEN"
+    scope: passenger
+  - key: e_ticket_number
+    label: "E-Ticket Number"
+    description: "E-ticket number(s), usually 13 digits starting with 232 for Malaysia Airlines"
+    scope: passenger
+  - key: frequent_flyer_program
+    label: "Frequent Flyer Program"
+    description: "Frequent flyer programme name and membership number, e.g. Enrich MH123456789"
+    scope: passenger
+  - key: primary_contact
+    label: "Primary Contact Details"
+    description: "Only what the page lists as the primary contact (email address, phone number, and a name only if one is shown there). Do not add the passenger's name"
+  - key: origin
+    label: "From"
+    description: "Departure city and airport code of the journey, e.g. Auckland (AKL)"
+  - key: destination
+    label: "To"
+    description: "Final destination city and airport code, e.g. Kuala Lumpur (KUL)"
+  - key: flight_details
+    label: "Flight Details"
+    description: "Each flight: flight number, date, departure-arrival airports and times, cabin"
+  - key: booking_status
+    label: "Booking Status"
+    description: "Booking/ticket status shown, e.g. Confirmed"

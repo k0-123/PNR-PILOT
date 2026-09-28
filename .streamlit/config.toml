@@ -1,0 +1,18 @@
+[server]
+address = "localhost"
+port = 8501
+headless = true
+maxUploadSize = 25
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#ad314d"
+backgroundColor = "#ececeb"
+secondaryBackgroundColor = "#f6f6f4"
+textColor = "#222222"
+borderColor = "#dcdcd9"
+baseRadius = "12px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"

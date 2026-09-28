@@ -1,0 +1,30 @@
+This is a photo of a computer monitor showing an airline GDS passenger list.
+The photo may be slanted, have glare, or show a mouse cursor over the text.
+
+Transcribe EVERY passenger row, top to bottom. Passenger rows look like:
+
+  086  02SHUKLA/SIDDHESHVA  BOGZGQ U  HK 14FEB SWI1G
+  089  01AKULA/MALINI MS    8SQLQK E  HK 06SEP DSMEY08WC
+  101  02KISHTAPPA NAIDU/H  9P4BIE E  HK 25FEB PATEY08WC
+
+Fields, left to right:
+- line_no: the 3-digit line number, keep leading zeros ("086").
+- pax_count: the 2 digits glued to the front of the surname ("02" -> 2). Split them off the surname.
+- surname: the text before "/" (without the pax digits). It may contain spaces ("KISHTAPPA NAIDU").
+- first_name: the text after "/". It is often truncated and may be a single letter. Do not complete it.
+- title: if the first name ends with a separate title word (MR, MS, MRS, MSTR, MISS, M), put that word here and leave it out of first_name. Otherwise null.
+  The name column is cut off at a fixed width, so the last word may be a cut-off name or title ("DIPIKA MA", "MANGESH R"): anything that is not exactly one of those titles belongs to first_name, as shown.
+- pnr: the 6-character booking reference (letters A-Z and digits 0-9), e.g. "BOGZGQ", "8SQLQK".
+- class_code: the 1-letter booking class ("U", "E").
+- status: the 2-letter status ("HK").
+- date: the date exactly as shown, DDMMM ("14FEB").
+- office_id: the last token on the row ("SWI1G", "DSMEY08WC").
+
+Rules:
+1. Extract only what is visible. NEVER guess or invent characters, and never "correct" a name.
+2. If any character of a field is unreadable, return null for that field and explain in notes (e.g. "PNR 4th char hidden by cursor").
+3. Take special care with look-alike characters: 0/O, 1/I, 8/B, 5/S, 2/Z, 6/G. PNRs mix letters and digits, so judge each character by its shape only, never by what "looks likely".
+   Terminal fonts usually draw the digit zero with a slash or dot inside and the letter O as an empty oval: compare each 0/O with other zeros and O's on the same screen.
+4. surname_confidence and pnr_confidence: 0.0 to 1.0, your confidence that EVERY character of that field is correct. Give a lower value when glare, blur, slant or a cursor affects any character. If you cannot tell a look-alike pair apart with certainty for even one character, the confidence must be 0.6 or lower.
+5. Ignore anything that is not a passenger row: command prompts like ")>", headers, menus, blank lines.
+6. Return JSON only, following the schema. If there are no passenger rows, return {"rows": []}.

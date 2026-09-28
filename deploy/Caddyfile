@@ -1,0 +1,23 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# 1. Point your domain's DNS A record to the VPS IP.
+# 2. Replace gds.example.com below, copy this file to /etc/caddy/Caddyfile, then:
+#      sudo systemctl reload caddy
+gds.example.com {
+    encode gzip
+    request_body {
+        max_size 30MB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+    }
+    # The Chrome extension calls https://<domain>/api/... (routes already start with /api,
+    # so the prefix is kept, not stripped). Everything else is the Streamlit dashboard.
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8501
+    }
+}

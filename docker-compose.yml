@@ -1,0 +1,57 @@
+services:
+  ui:
+    build: .
+    image: gds-pnr-lookup:latest
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      - ./config:/app/config:ro        # edit website.yaml / result_fields.yaml without rebuilding
+    # Only reachable from the server itself; Caddy/Nginx in front provides HTTPS.
+    ports:
+      - "127.0.0.1:8501:8501"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    image: gds-pnr-lookup:latest
+    depends_on:
+      - ui                              # ensures the image is built first
+    command: ["python", "-m", "app.api"]
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      API_HOST: 0.0.0.0                 # bind inside the container so the published port works
+    volumes:
+      - ./data:/data
+      - ./config:/app/config:ro
+    # Only reachable from the server itself; Caddy proxies https://<domain>/api to it.
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: gds-pnr-lookup:latest
+    depends_on:
+      - ui                              # ensures the image is built first
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      - ./config:/app/config:ro
+    ipc: host                           # recommended by Playwright for Chromium stability
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s              # lets the current lookup finish; the job resumes later

@@ -1,0 +1,57 @@
+# Site profile for the browser extension: Malaysia Airlines "Retrieve booking" (live site).
+# History:
+#   - 2026-09-24/25: used the Vue "My booking" form on www.malaysiaairlines.com
+#     (fields bookingRef / lastName). Pressing its "My booking" button redirects the browser to
+#     MH's online booking system at online.malaysiaairlines.com/booking/manage-booking/retrieve.
+#   - 2026-09-28: that redirect landed on a SECOND search form ("Search for a booking" at
+#     .../manage-booking/retrieve) whose fields the profile did not know, so the extension got
+#     stuck at "waiting for the result or the search form…" (see "image copy 5.png", job 14 AKIN
+#     8QL9C4). Also, the booking was already marked "searched" on the Vue form, so Auto-continue
+#     would not fire a second time for the same PNR.
+#   Fix: use the retrieve form directly as the single search form. It loads standalone at the URL
+#   below, its "Booking reference" box wants the 6-char PNR ("Booking reference is a 6 alpha-numeric
+#   code."), and pressing Continue goes to .../manage-booking/confirmation (the result page).
+# The dashboard/API can override this file (saved in the database).
+name: "Malaysia Airlines"
+# The retrieve form opens with both fields showing (no tab click needed). Its button is "Continue".
+search_url: "https://online.malaysiaairlines.com/booking/manage-booking/retrieve?lang=en-GB"
+match_urls: ["https://*.malaysiaairlines.com/*"]
+fields:
+  # Selectors cover the retrieve form (placeholder / id "recordLocator") and, as a fallback, the
+  # older Vue "My booking" form (name bookingRef / lastName). find() prefers the visible one.
+  surname: { selector: 'input[placeholder="Your last name"], input#lastName, input[name="lastName"], input[aria-label="Last name"]' }
+  pnr:     { selector: 'input[placeholder="Your booking reference"], input#recordLocator, input[name="recordLocator"], input[name="bookingRef"], input[aria-label="Booking reference number"]' }
+focus_after_fill: surname          # Last name is the second box: press Enter there
+open_form:
+  # Fallback only, in case the fields are ever hidden behind a tab. Only tab buttons are pressed
+  # here, never the form's Continue/submit button.
+  text: "My booking"
+auto_submit:
+  # Staff can switch on "Auto-continue" in the side panel. Each search waits a random 6-11 s; the
+  # jitter makes the pace look less like a bot. It switches off at the first CAPTCHA / block.
+  # Faster searching raises the risk of being blocked.
+  allowed: true
+  min_gap_ms: 6000
+  max_gap_ms: 11000                 # random gap in [min, max]; set 0 to search at a fixed 6 s
+  button_text: "Continue"          # the retrieve form's submit button
+result_detect:
+  # After Continue, MH shows the booking at
+  # https://online.malaysiaairlines.com/booking/manage-booking/confirmation (seen 2026-09-24).
+  url_contains: "/manage-booking/confirmation"
+not_found_detect:
+  selector: null
+  # Only messages MH shows for a booking that doesn't exist. NOT the form's own validation text
+  # ("Please enter a valid booking reference"), which can be on screen before any search.
+  text_contains:
+    # Real MH wording (job 12, F90PNV, 2026-09-26), shown on online.malaysiaairlines.com:
+    # "Your booking cannot be found. Please check the information you have submitted and try again."
+    - "booking cannot be found"
+    - "we are unable to find"
+    - "unable to retrieve"
+    - "booking could not be found"
+    - "no booking found"
+capture:
+  container_selector: "body"       # read the whole result page
+  screenshot: fallback
+settle_ms: 1500                    # MH's booking page loads in steps: read once it has not changed for 1.5 s
+pnr_check: true

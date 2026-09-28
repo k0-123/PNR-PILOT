@@ -1,0 +1,22 @@
+# Site profile for the local mock booking site (python -m tests.mock_site.server).
+# For local demos and tests only. DELETE this file in production.
+name: "Mock booking site (local demo)"
+search_url: "http://127.0.0.1:8765/"
+match_urls: ["http://127.0.0.1/*"]
+fields:
+  surname: { selector: "#surname" }
+  pnr:     { selector: "#pnr" }
+focus_after_fill: pnr
+open_form: { text: "My booking" }
+auto_submit: { allowed: true, min_gap_ms: 2000, max_gap_ms: 4000 }
+result_detect:
+  url_contains: "/search"
+  selector: "#result"
+not_found_detect:
+  selector: "#not-found"
+  text_contains: ["could not find a booking"]
+capture:
+  container_selector: "body"
+  screenshot: fallback
+settle_ms: 200
+pnr_check: true
