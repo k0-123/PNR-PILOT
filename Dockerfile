@@ -16,6 +16,8 @@ RUN pip install -r requirements.txt
 COPY app ./app
 COPY config ./config
 COPY .streamlit ./.streamlit
+# The built extension the "Download extension" button serves (app/ui.py::_extension_zip).
+COPY extension/dist ./extension/dist
 
 # Run as an unprivileged user with a fixed UID (the ./data volume must be writable by it:
 #   sudo chown -R 10001:10001 data   on the host).

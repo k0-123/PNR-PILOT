@@ -214,6 +214,13 @@ def _extension_zip() -> bytes:
     import io, zipfile
     from pathlib import Path as _P
     root = _P(__file__).resolve().parents[1] / "extension" / "dist"
+    if not (root / "manifest.json").is_file():
+        # Without this the zip is silently empty (rglob on a missing dir yields nothing),
+        # and staff download a broken extension. Surface it instead.
+        raise FileNotFoundError(
+            f"Built extension not found at {root}. Run `npm run build` in extension/ and "
+            "make sure extension/dist is deployed (Dockerfile COPYs it into the image)."
+        )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in root.rglob("*"):

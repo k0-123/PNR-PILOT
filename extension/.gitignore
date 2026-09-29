@@ -1,2 +1,3 @@
 node_modules/
-dist/
+# dist/ is intentionally tracked: the app's "Download extension" button ships it,
+# and the Docker image (Dockerfile: COPY extension/dist) needs it present at build time.
