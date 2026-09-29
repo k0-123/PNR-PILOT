@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GDS PNR Lookup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1 class="brand">GDS PNR<span class="dot-word" data-dots="Lookup" role="img"></span></h1>
+    <button id="toggle-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
+  </header>
+
+  <section id="settings" hidden>
+    <label>App address <input id="api-url" placeholder="http://127.0.0.1:8000"></label>
+    <label>Your token <input id="token" type="password" placeholder="gds_…" autocomplete="off"></label>
+    <div class="row">
+      <button id="save-settings" class="primary">Save</button>
+      <span id="settings-msg" class="muted"></span>
+    </div>
+    <p class="muted">Create a token on the dashboard: <em>Extension tokens</em>.</p>
+  </section>
+
+  <section id="setup">
+    <label>Job <select id="job"></select></label>
+    <label>Website <select id="profile"></select></label>
+    <div class="row">
+      <button id="start" class="primary">▶ Start</button>
+      <button id="stop">■ Stop</button>
+      <button id="refresh" class="icon" title="Reload jobs">↻</button>
+    </div>
+    <label class="switch">
+      <input id="auto" type="checkbox">
+      <span class="track" aria-hidden="true"></span>
+      <span><strong>Auto-continue</strong><br><small>Presses Continue by itself, at least a few seconds apart. Turns off at any CAPTCHA.</small></span>
+    </label>
+  </section>
+
+  <div id="warning" class="warning" hidden>
+    <span id="warning-text"></span>
+    <button id="resume" class="primary" hidden>Resume</button>
+  </div>
+
+  <section id="current" class="glass glass--speed">
+    <div class="label">Now</div>
+    <div id="cur-pnr" class="pnr">–</div>
+    <div id="cur-surname" class="surname"></div>
+    <ul id="cur-pax" class="pax"></ul>
+    <div id="status-line" class="status">Not started</div>
+  </section>
+
+  <section class="keys">
+    <button data-key="notfound">Not found <kbd>Alt+N</kbd></button>
+    <button data-key="skip">Skip <kbd>Alt+S</kbd></button>
+    <button data-key="back">Back <kbd>Alt+B</kbd></button>
+    <button data-key="pause" id="pause-btn">Pause <kbd>Alt+P</kbd></button>
+    <button data-key="recapture">Re-capture <kbd>Alt+R</kbd></button>
+  </section>
+
+  <section id="counters" class="grid">
+    <div class="glass glass--speed"><small>done</small><span id="c-done" data-dots="0" role="img"></span></div>
+    <div class="glass glass--context"><small>not found</small><span id="c-nf" data-dots="0" role="img"></span></div>
+    <div class="glass glass--connections"><small>problems</small><span id="c-err" data-dots="0" role="img"></span></div>
+    <div class="glass glass--speed"><small>PNRs left</small><span id="c-left" data-dots="–" role="img"></span></div>
+    <div class="glass glass--context"><small>per minute</small><span id="c-speed" data-dots="–" role="img"></span></div>
+    <div class="glass glass--connections"><small>ETA</small><span id="c-eta" data-dots="–" role="img"></span></div>
+  </section>
+  <p id="outbox" class="muted"></p>
+  <div class="row"><button id="download">⬇ Final Excel</button><span id="download-msg" class="muted"></span></div>
+  <p class="muted note">Only <strong>you</strong> start a search, by pressing Enter on the airline page. The extension fills the fields, reads the result and moves to the next booking.</p>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
