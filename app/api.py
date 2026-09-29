@@ -78,9 +78,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def me(token=Depends(auth)):
         return {"name": token["name"]}
 
+    def own_job(db: Database, job_id: int, token):
+        """The job, only if it belongs to this token's user (else 404, so users can't probe others)."""
+        job = db.get_job(job_id)
+        if job is None or job["user_id"] != token["user_id"]:
+            raise LookupRequestError("job not found", 404)
+        return job
+
     @app.get("/api/jobs")
     def jobs(token=Depends(auth), db: Database = Depends(get_db)):
-        return lookups.open_jobs(db)
+        return lookups.open_jobs(db, token["user_id"])
 
     @app.get("/api/site-profiles")
     def site_profiles(token=Depends(auth), db: Database = Depends(get_db)):
@@ -105,25 +112,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/claim")
     def claim(job_id: int, n: int = Query(20, ge=1, le=100), token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
         return {"leases": lookups.claim(db, job_id, token, n, settings)}
 
     @app.post("/api/jobs/{job_id}/lookups/{pnr}/capture")
     def capture(job_id: int, pnr: str, body: CaptureIn, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
         res = lookups.save_capture(db, storage, settings, job_id, pnr, token, text=body.text,
                                    screenshot_b64=body.screenshot_b64, url=body.url, recapture=body.recapture)
         return {"status": res.status, "stored": res.stored}
 
     @app.post("/api/jobs/{job_id}/lookups/{pnr}/status")
     def status(job_id: int, pnr: str, body: StatusIn, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
         return {"status": lookups.set_status(db, job_id, pnr, token, body.status, body.note)}
 
     @app.post("/api/jobs/{job_id}/release")
     def release(job_id: int, body: ReleaseIn | None = None, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
         return {"released": lookups.release(db, job_id, token, body.pnrs if body else None)}
 
     @app.post("/api/jobs/{job_id}/resume")
     def resume(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
         """After a BLOCKED page was dealt with in the browser: re-open the paused job."""
+        own_job(db, job_id, token)
         if not lookups.resume(db, job_id):
             raise LookupRequestError("job is not paused", 409)
         return {"status": db.get_job(job_id)["status"]}
@@ -131,14 +143,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/final.xlsx")
     def final_excel(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
         """The final Excel as it is right now (built fresh)."""
-        if db.get_job(job_id) is None:
-            raise LookupRequestError("job not found", 404)
+        own_job(db, job_id, token)
         xlsx_key, _ = export_final(db, storage, job_id)
         return FileResponse(storage.path(xlsx_key), filename=f"job_{job_id}_final.xlsx",
                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     @app.get("/api/jobs/{job_id}/progress")
     def progress(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
         return lookups.progress(db, job_id)
 
     return app

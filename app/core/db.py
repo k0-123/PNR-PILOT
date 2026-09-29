@@ -226,6 +226,27 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_flt_ledger_kind ON flt_ledger(kind, created_at);
     ALTER TABLE rows ADD COLUMN flt_charged_at TEXT;
     """,
+    # v8: accounts (app/users.py). The admin creates every account (no public sign-up) and each
+    # user has ONE active session (session_id) so a new device signs the old one out. Jobs, FLT
+    # ledger rows and extension tokens carry the owning user_id for per-user FLT balances.
+    """
+    CREATE TABLE users (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        email          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash  TEXT NOT NULL,           -- pbkdf2_sha256$iters$salt$hash; the password is never stored
+        is_admin       INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL,
+        disabled_at    TEXT,
+        session_id     TEXT,                    -- current single-device session; NULL = signed out
+        session_at     TEXT,
+        last_seen_at   TEXT
+    );
+    ALTER TABLE jobs ADD COLUMN user_id INTEGER REFERENCES users(id);
+    ALTER TABLE flt_ledger ADD COLUMN user_id INTEGER;
+    ALTER TABLE api_tokens ADD COLUMN user_id INTEGER REFERENCES users(id);
+    CREATE INDEX idx_jobs_user ON jobs(user_id);
+    CREATE INDEX idx_flt_ledger_user ON flt_ledger(user_id, kind);
+    """,
 ]
 
 _JOB_UPDATABLE = {"name", "status", "website_config_name", "error_message", "extraction_started_at",
@@ -299,19 +320,24 @@ class Database:
             raise
 
     # ------------------------------------------------------------------ jobs
-    def create_job(self, name: str, website_config_name: str = "website") -> int:
+    def create_job(self, name: str, website_config_name: str = "website",
+                   user_id: int | None = None) -> int:
         ts = now()
         with self.tx() as c:
             return c.execute(
-                "INSERT INTO jobs(name, website_config_name, created_at, updated_at) VALUES (?,?,?,?)",
-                (name, website_config_name, ts, ts),
+                "INSERT INTO jobs(name, website_config_name, created_at, updated_at, user_id) "
+                "VALUES (?,?,?,?,?)",
+                (name, website_config_name, ts, ts, user_id),
             ).lastrowid
 
     def get_job(self, job_id: int) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
 
-    def list_jobs(self) -> list[sqlite3.Row]:
-        return self.conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchall()
+    def list_jobs(self, user_id: int | None = None) -> list[sqlite3.Row]:
+        if user_id is None:
+            return self.conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchall()
+        return self.conn.execute("SELECT * FROM jobs WHERE user_id=? ORDER BY id DESC",
+                                 (user_id,)).fetchall()
 
     def update_job(self, job_id: int, **fields) -> None:
         bad = set(fields) - _JOB_UPDATABLE
@@ -548,7 +574,9 @@ class Database:
         return self.conn.execute("SELECT * FROM workers WHERE last_seen >= ?",
                                  (ago(within_seconds),)).fetchall()
 
-    def list_jobs_with_counts(self) -> list[sqlite3.Row]:
+    def list_jobs_with_counts(self, user_id: int | None = None) -> list[sqlite3.Row]:
+        where = "" if user_id is None else "WHERE j.user_id=? "
+        args: tuple = () if user_id is None else (user_id,)
         return self.conn.execute(
             f"""SELECT j.*,
                    (SELECT COUNT(*) FROM images i WHERE i.job_id=j.id) AS images,
@@ -561,7 +589,7 @@ class Database:
                         AND r.lookup_status='NOT_FOUND') AS rows_not_found,
                    (SELECT COUNT(*) FROM rows r WHERE r.job_id=j.id AND r.extraction_status IN {ELIGIBLE_SQL}
                         AND r.lookup_status IN {RETRYABLE_SQL}) AS rows_failed
-               FROM jobs j ORDER BY j.id DESC"""
+               FROM jobs j {where}ORDER BY j.id DESC""", args
         ).fetchall()
 
     # -------------------------------------------------------- PNR screens

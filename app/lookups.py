@@ -61,22 +61,25 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_token(db: Database, name: str) -> str:
-    """Create an extension token. Returns the token; only its hash is stored (show it once)."""
+def create_token(db: Database, name: str, user_id: int | None = None) -> str:
+    """Create an extension token owned by `user_id`. Returns the token; only its hash is stored
+    (show it once). The owner scopes which jobs the token can see and whose FLT its lookups spend."""
     name = (name or "").strip()
     if not name:
         raise LookupRequestError("give the token a name (e.g. the staff member's name)")
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with db.tx() as c:
-        c.execute("INSERT INTO api_tokens(name, token_hash, created_at) VALUES (?,?,?)",
-                  (name[:80], hash_token(token), now()))
-    log.info("Extension token created", extra={"token_name": name[:80]})
+        c.execute("INSERT INTO api_tokens(name, token_hash, created_at, user_id) VALUES (?,?,?,?)",
+                  (name[:80], hash_token(token), now(), user_id))
+    log.info("Extension token created", extra={"token_name": name[:80], "user_id": user_id})
     return token
 
 
-def list_tokens(db: Database):
+def list_tokens(db: Database, user_id: int | None = None):
+    where = "" if user_id is None else "WHERE user_id=? "
+    args: tuple = () if user_id is None else (user_id,)
     return db.conn.execute("SELECT id, name, created_at, last_used_at, revoked_at FROM api_tokens "
-                           "ORDER BY revoked_at IS NOT NULL, id DESC").fetchall()
+                           f"{where}ORDER BY revoked_at IS NOT NULL, id DESC", args).fetchall()
 
 
 def revoke_token(db: Database, token_id: int) -> bool:
@@ -107,10 +110,11 @@ def authenticate(db: Database, token: str | None):
 
 
 # --------------------------------------------------------------------- jobs
-def open_jobs(db: Database) -> list[dict]:
-    """Jobs the extension can work on (opened for lookups on the dashboard)."""
+def open_jobs(db: Database, user_id: int | None = None) -> list[dict]:
+    """Jobs the extension can work on (opened for lookups on the dashboard). Scoped to the token's
+    owner so each user only sees and looks up their own jobs."""
     out = []
-    for j in db.list_jobs():
+    for j in db.list_jobs(user_id):
         if j["status"] in LISTED_STATUSES and j["lookup_requested"]:
             p = job_progress(db, j["id"])
             out.append({"id": j["id"], "name": j["name"], "status": j["status"],
@@ -159,8 +163,8 @@ def claim(db: Database, job_id: int, token, n: int, settings: Settings) -> list[
     Returns the token's current leases, oldest first: [{pnr, surname, passengers, lease_until}]."""
     n = max(1, min(int(n), 100))
     _job_open_for_claims(db, job_id)
-    if not credits.claims_allowed(db):
-        raise LookupRequestError("Not enough FLT credits: add a plan on the dashboard (FLT credits page)", 402)
+    if not credits.claims_allowed(db, token["user_id"]):
+        raise LookupRequestError("Not enough FLT credits: ask the admin to add a plan for your account", 402)
     ts = _utcnow()
     lease_until = _ts(ts + timedelta(minutes=settings.lease_minutes))
     with db.write_tx() as c:

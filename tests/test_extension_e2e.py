@@ -168,7 +168,7 @@ def test_staff_presses_enter_extension_does_the_rest(settings, db, storage, api_
     wait_until(lambda: db.get_job(job)["status"] == JobStatus.PAUSED, what="job paused on CAPTCHA")
     assert lookup(db, job, "CAPTE5")["status"] == LookupStatus.BLOCKED
     panel.wait_for_function("() => !document.querySelector('#warning').hidden")
-    assert "handle it in the browser" in panel.inner_text("#warning")
+    assert "Solve it in the browser" in panel.inner_text("#warning")
 
     # each PNR was searched exactly once, only by the Enter presses above
     assert [hits[p] for p in ("OKE2E1", "NFE2E2", "MISME3", "OKE2E4", "CAPTE5")] == [1, 1, 1, 1, 1]

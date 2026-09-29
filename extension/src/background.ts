@@ -302,6 +302,15 @@ async function onContent(msg: ContentMessage, sender: chrome.runtime.MessageSend
         await refill(s);
         return instruction(s, { navigate: s.profile?.search_url });
       }
+      case "timeout": {
+        if (job === null || current?.pnr !== msg.pnr || s.searched !== msg.pnr) return instruction(s);
+        await queueUpload(s, job, msg.pnr, "status", { status: "SKIPPED", note: "timed out: the page did not load a result in time" });
+        advance(s);
+        s.session.problems += 1;
+        s.statusLine = `Skipped (timed out): ${msg.pnr}`;
+        await refill(s);
+        return instruction(s, { navigate: s.profile?.search_url });
+      }
       case "blocked": {
         if (job !== null && msg.pnr && !s.blocked) {
           await queueUpload(s, job, msg.pnr, "status", { status: "BLOCKED", note: msg.reason });

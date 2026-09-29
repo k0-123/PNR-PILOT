@@ -29,7 +29,10 @@ fields:
     description: "Final destination city and airport code, e.g. Kuala Lumpur (KUL)"
   - key: flight_details
     label: "Flight Details"
-    description: "Each flight: flight number, date, departure-arrival airports and times, cabin"
+    description: "Each flight: flight number, date, departure-arrival airports and times, cabin. Include any change/reschedule shown, e.g. a new time or 'Schedule changed', 'Rescheduled', 'Time changed'"
+  - key: operating_flight
+    label: "Operated By"
+    description: "The operating carrier and flight when the page says 'Operated by', e.g. 'MH 144', 'MH 108'. List each operating flight; leave empty if not shown"
   - key: booking_status
     label: "Booking Status"
-    description: "Booking/ticket status shown, e.g. Confirmed"
+    description: "Booking/ticket status shown, e.g. Confirmed. Note any flight-change/reschedule alert if the page shows one"

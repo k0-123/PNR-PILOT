@@ -54,4 +54,5 @@ capture:
   container_selector: "body"       # read the whole result page
   screenshot: fallback
 settle_ms: 1500                    # MH's booking page loads in steps: read once it has not changed for 1.5 s
+row_timeout_ms: 30000              # skip a booking that shows no result within 30 s and move to the next
 pnr_check: true

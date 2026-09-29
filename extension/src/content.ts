@@ -272,6 +272,20 @@ function evaluate(): void {
     return;
   }
 
+  // 3b. Watchdog: a booking that was searched but never became a result / not-found page within
+  // row_timeout_ms is skipped, so one stuck page doesn't freeze the whole run (Retry failed can
+  // re-run it later). A CAPTCHA / block is handled above and pauses instead — this never skips one.
+  const rowTimeout = profile.row_timeout_ms ?? 30_000;
+  if (ins.searched && ins.lastSearchAt && rowTimeout > 0 && Date.now() - ins.lastSearchAt > rowTimeout) {
+    if (!handled) {
+      handled = true;
+      log("row timed out after", rowTimeout, "ms:", item.pnr);
+      status(`No result in ${Math.round(rowTimeout / 1000)} s — skipping ${item.pnr}`);
+      void send({ type: "timeout", pnr: item.pnr }).then(apply);
+    }
+    return;
+  }
+
   // 4. Search form: fill it and wait for the person to press Enter.
   const surnameEl = find(profile.fields.surname.selector) as HTMLInputElement | null;
   const pnrEl = find(profile.fields.pnr.selector) as HTMLInputElement | null;

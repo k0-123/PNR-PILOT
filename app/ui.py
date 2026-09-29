@@ -7,7 +7,6 @@ keep going when the browser tab is closed. Lookups are done by staff in the brow
 """
 from __future__ import annotations
 
-import hmac
 import logging
 import sys
 import time
@@ -18,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # `streamlit run a
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from app import credits, jobs, lookups, theme  # noqa: E402
+from app import credits, jobs, lookups, theme, users  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.db import Database  # noqa: E402
 from app.core.logging_setup import setup_logging  # noqa: E402
@@ -27,7 +26,7 @@ from app.core.storage import LocalStorage, StorageError  # noqa: E402
 from app.excel.writer import table_to_csv_bytes  # noqa: E402
 from app.lookup.gds_screens import unmatched_list  # noqa: E402
 
-st.set_page_config(page_title="GDS PNR Lookup", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="PNR Pilot · FocusLinkTech", page_icon="✈️", layout="wide")
 st.markdown(theme.CSS, unsafe_allow_html=True)
 
 settings = get_settings()
@@ -43,6 +42,7 @@ def _init_logging() -> bool:
 _init_logging()
 db = Database(settings.db_path)
 storage = LocalStorage(settings.data_dir)
+users.ensure_bootstrap_admin(db, settings)
 
 PAGES = ["Dashboard", "New job", "Job details", "Review", "Results", "FLT credits", "Extension tokens"]
 BADGE = {
@@ -96,28 +96,73 @@ def _sign_in_guard() -> dict:
     return {"failed": 0, "locked_until": 0.0}
 
 
-def credentials_ok(email: str, password: str) -> bool:
-    """Only the single account from .env (APP_EMAIL + APP_PASSWORD) may sign in."""
-    good_email = settings.app_email.strip().lower().encode()
-    good_pw = settings.app_password.get_secret_value().encode()
-    # Compare both in constant time, and always both, so timing reveals nothing.
-    email_ok = hmac.compare_digest(email.strip().lower().encode(), good_email)
-    pw_ok = hmac.compare_digest(password.encode(), good_pw)
-    return email_ok and pw_ok
+_AURORA_VIDEO = ("https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/"
+                 "hf_20260506_081238_406ed0e3-5d83-436e-a512-0bbff7ec5b95.mp4")
+
+_AURORA_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+.stApp, [data-testid="stAppViewContainer"]{background:#000!important;font-family:'Inter',sans-serif;}
+#MainMenu,header,footer{visibility:hidden;}
+.block-container{padding-top:0!important;}
+.aur-hero{position:fixed;top:16px;left:16px;bottom:16px;width:49vw;border-radius:24px;overflow:hidden;
+  background:linear-gradient(135deg,#4338ca 0%,#7c3aed 50%,#2563eb 100%);
+  box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:0;}
+.aur-hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.aur-inner{position:absolute;z-index:2;left:48px;bottom:120px;width:320px;color:#fff;}
+.aur-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:20px;margin-bottom:28px;}
+.aur-dot{width:16px;height:16px;border-radius:50%;background:#fff;display:inline-block;}
+.aur-h{font-size:38px;font-weight:500;letter-spacing:-1px;margin:0;}
+.aur-p{color:rgba(255,255,255,.6);font-size:14px;margin:8px 0 24px;}
+.aur-step{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;margin-bottom:10px;
+  background:#1A1A1A;color:#fff;font-size:14px;font-weight:500;}
+.aur-step.on{background:#fff;color:#000;}
+.aur-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.4);}
+.aur-step.on .aur-num{background:#000;color:#fff;}
+.aur-head{margin:0 0 8px;} .aur-title{font-size:30px;font-weight:500;color:#fff;letter-spacing:-.5px;}
+.aur-sub{color:rgba(255,255,255,.4);font-size:14px;margin-top:4px;}
+section[data-testid="stMain"] label{color:#fff!important;font-weight:500;}
+div[data-testid="stTextInput"] input{background:#1A1A1A!important;color:#fff!important;border:none!important;
+  border-radius:12px!important;height:44px;}
+button[kind="primary"]{background:#fff!important;color:#000!important;border:none!important;
+  border-radius:12px!important;height:52px;font-weight:600!important;}
+.aur-foot{color:rgba(255,255,255,.5);font-size:13px;text-align:center;margin-top:14px;}
+.aur-foot b{color:#fff;}
+</style>"""
+
+
+def _aurora_hero() -> str:
+    steps = [("1", "Register your identity", True), ("2", "Configure your studio", False),
+             ("3", "Finalize your profile", False)]
+    rows = "".join(
+        f'<div class="aur-step{" on" if a else ""}"><span class="aur-num">{n}</span>{t}</div>'
+        for n, t, a in steps)
+    return (f'<div class="aur-hero">'
+            f'<div class="aur-inner"><div class="aur-brand"><span class="aur-dot"></span>PNR Pilot</div>'
+            f'<h1 class="aur-h">Join PNR&nbsp;Pilot</h1>'
+            f'<p class="aur-p">Built &amp; developed by <b>focuslinktech.com</b></p>{rows}</div></div>')
 
 
 def sign_in_gate() -> None:
-    if not (settings.app_email and settings.app_password.get_secret_value()):
-        st.error("Sign-in is not configured. Set APP_EMAIL and APP_PASSWORD in .env and restart.")
-        st.stop()
-    if st.session_state.get("signed_in_as"):
-        return
+    """Admin-created accounts only, one active device each (a new sign-in signs the old one out)."""
+    # Already signed in this browser session: make sure this is still the user's active device.
+    if st.session_state.get("user_id"):
+        if users.session_valid(db, st.session_state["user_id"], st.session_state.get("session_id")):
+            return
+        # The session was taken over by another device (or the account was disabled/reset).
+        for key in ("signed_in_as", "user_id", "session_id", "is_admin"):
+            st.session_state.pop(key, None)
+        flash("warning", "You were signed out because this account signed in on another device.")
 
-    _, mid, _ = st.columns([1, 1.2, 1])
+    st.markdown(_AURORA_CSS + _aurora_hero(), unsafe_allow_html=True)
+    _, mid = st.columns([1.08, 1])
     with mid:
-        st.markdown(theme.brand("lg"), unsafe_allow_html=True)
-        st.markdown('<p class="intro" style="text-align:center;margin:0 0 1rem">Sign in to continue</p>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="aur-head"><div class="aur-title">Sign in to PNR&nbsp;Pilot</div>'
+            '<div class="aur-sub">Enter your details to access your workspace.</div></div>',
+            unsafe_allow_html=True)
+        show_flash()
         guard = _sign_in_guard()
         if time.time() < guard["locked_until"]:
             st.error("Too many wrong attempts. Try again in "
@@ -127,10 +172,14 @@ def sign_in_gate() -> None:
             email = st.text_input("Email", autocomplete="email")
             password = st.text_input("Password", type="password", autocomplete="current-password")
             if st.form_submit_button("Sign in", type="primary", width="stretch"):
-                if credentials_ok(email, password):
-                    st.session_state.signed_in_as = settings.app_email
+                user = users.authenticate_login(db, email, password)
+                if user is not None:
+                    st.session_state.signed_in_as = user.email
+                    st.session_state.user_id = user.id
+                    st.session_state.is_admin = user.is_admin
+                    st.session_state.session_id = users.start_session(db, user.id)
                     guard["failed"] = 0
-                    log.info("Sign-in succeeded")
+                    log.info("Sign-in succeeded", extra={"email": user.email})
                     st.rerun()
                 guard["failed"] += 1
                 log.warning("Sign-in failed", extra={"attempt": guard["failed"]})
@@ -139,10 +188,25 @@ def sign_in_gate() -> None:
                     guard["failed"] = 0
                     st.rerun()
                 st.error("Wrong email or password.")
+
+        pills = "".join(
+            f'<span style="background:#1A1A1A;color:#fff;padding:.3rem .7rem;border-radius:999px;'
+            f'font-size:.78rem;font-weight:500;border:1px solid rgba(255,255,255,.1)">{s}</span>'
+            for s in ("Web & App Development", "Business Automation", "AI & Data Solutions",
+                      "Chrome Extensions", "Cloud Hosting & Deployment"))
+        st.markdown(
+            '<div style="margin-top:1.4rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.1)">'
+            '<div style="font-size:.72rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;'
+            'color:rgba(255,255,255,.4);margin-bottom:.6rem;text-align:center">Services by focuslinktech.com</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center">{pills}</div>'
+            '<div class="aur-foot" style="margin-top:.9rem">Need custom software? &nbsp;<b>focuslinktech.com</b>'
+            '</div></div>', unsafe_allow_html=True)
     st.stop()
 
 
 sign_in_gate()
+CURRENT_USER_ID = st.session_state["user_id"]
+IS_ADMIN = st.session_state.get("is_admin", False)
 
 
 # --------------------------------------------------------------- sidebar
@@ -151,7 +215,7 @@ if "_goto" in st.session_state:
 if "_goto_job" in st.session_state:
     st.session_state["current_job"] = st.session_state.pop("_goto_job")
 
-all_jobs = db.list_jobs_with_counts()
+all_jobs = db.list_jobs_with_counts(CURRENT_USER_ID)  # each user sees only their own jobs
 job_ids = [j["id"] for j in all_jobs]
 job_by_id = {j["id"]: j for j in all_jobs}
 if st.session_state.get("current_job") not in job_ids:
@@ -159,7 +223,8 @@ if st.session_state.get("current_job") not in job_ids:
 
 with st.sidebar:
     st.markdown(theme.brand(), unsafe_allow_html=True)
-    page = st.radio("Page", PAGES, key="page", label_visibility="collapsed")
+    visible_pages = PAGES + (["Manage users"] if IS_ADMIN else [])
+    page = st.radio("Page", visible_pages, key="page", label_visibility="collapsed")
     if job_ids and page in ("Job details", "Review", "Results"):
         # No widget key: the chosen job lives in session_state["current_job"] and survives pages
         # where this selectbox isn't shown.
@@ -170,11 +235,12 @@ with st.sidebar:
     online = db.workers_online(30)
     st.caption(("🟢 Worker running" if online else "🔴 Worker not running"))
     st.caption(f"Extraction: `{settings.gemini_model_extract}`  \nResults: `{settings.gemini_model_result}`")
-    flt = credits.balance(db)
+    flt = credits.balance(db, CURRENT_USER_ID)
     st.caption(f"FLT credits: **{flt.available:,}** available" if flt.active else "FLT credits: off (no plan yet)")
-    st.caption(f"Signed in as **{st.session_state.signed_in_as}**")
+    st.caption(f"Signed in as **{st.session_state.signed_in_as}**" + ("  ·  _admin_" if IS_ADMIN else ""))
     if st.button("Sign out", width="stretch"):
-        for key in ("signed_in_as", "current_job"):
+        users.end_session(db, CURRENT_USER_ID)
+        for key in ("signed_in_as", "user_id", "session_id", "is_admin", "current_job"):
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -238,7 +304,7 @@ def page_new_job() -> None:
             return
         try:
             job_id = jobs.create_job(db, storage, settings, name.strip() or Path(files[0].name).stem,
-                                     [(f.name, f.getvalue()) for f in files])
+                                     [(f.name, f.getvalue()) for f in files], user_id=CURRENT_USER_ID)
         except (StorageError, jobs.JobActionError) as exc:
             st.error(str(exc))
             return
@@ -580,47 +646,77 @@ def _fix_and_retry(job_id: int) -> None:
 def page_credits() -> None:
     st.title("FLT credits")
     intro("1 FLT = 1 row that got its booking details. Rows that are not found, skipped or rejected "
-          "cost nothing, and a row is charged only once (retries and re-reads are free).")
-    b = credits.balance(db)
+          "cost nothing, and a row is charged only once (retries and re-reads are free). Each account "
+          "has its own FLT balance.")
+
+    # Everyone sees their own balance.
+    b = credits.balance(db, CURRENT_USER_ID)
     if not b.active:
-        st.info("FLT credits are off: lookups are not limited yet. They start when the first plan is added.")
+        st.info("FLT credits are off: lookups are not limited yet. They start when the admin adds the "
+                "first plan.")
     st.markdown(theme.kpi_row([
-        ("Available", b.available if b.active else "–"),
+        ("Your available", b.available if b.active else "–"),
         ("On hold (open jobs)", b.held),
         ("Used", b.used),
     ], animate=True), unsafe_allow_html=True)
     st.caption(f"Balance {b.balance:,} FLT − {b.held:,} on hold for rows of jobs open for lookups = "
                f"{b.available:,} available.")
 
-    user = st.session_state.signed_in_as
-    if not credits.is_admin(settings, user):
-        st.caption("Only the FLT admin can add FLT.")
-    else:
-        with st.form("add_plan", clear_on_submit=True):
-            st.markdown("**Add a plan**")
-            c1, c2 = st.columns([1, 1])
-            choice = c1.selectbox("Plan", [*credits.PLANS, "Custom amount"])
-            custom = c2.number_input("FLT (custom amount)", min_value=1, max_value=1_000_000, value=1000, step=500)
-            note = st.text_input("Note (optional)", placeholder="e.g. invoice / payment reference")
-            if st.form_submit_button("➕ Add plan", type="primary"):
-                if not credits.is_admin(settings, st.session_state.get("signed_in_as")):  # re-check on submit
-                    st.error("Only the FLT admin can add FLT.")
-                    st.stop()
-                amount = credits.PLANS.get(choice, int(custom))
-                total = credits.add_plan(db, amount, plan=choice if choice in credits.PLANS else None, note=note,
-                                         by_user=user)
-                flash("success", f"{amount:,} FLT added. Balance: {total:,} FLT.")
-                st.rerun()
+    if not IS_ADMIN:
+        st.caption("Only an admin can add FLT. Ask the admin to top up your account.")
+        entries = credits.ledger(db, user_id=CURRENT_USER_ID)
+        _flt_history(entries, show_user=False)
+        return
 
-    entries = credits.ledger(db)
-    if entries:
-        st.markdown("**History**")
-        st.dataframe(pd.DataFrame([{
+    # Admin: allocate FLT to any account.
+    st.divider()
+    account_users = users.list_users(db)
+    by_label = {f"{u.email}" + (" (admin)" if u.is_admin else ""): u for u in account_users}
+    with st.form("add_plan", clear_on_submit=True):
+        st.markdown("**Add a plan to an account**")
+        who = st.selectbox("Account", list(by_label))
+        c1, c2 = st.columns([1, 1])
+        choice = c1.selectbox("Plan", [*credits.PLANS, "Custom amount"])
+        custom = c2.number_input("FLT (custom amount)", min_value=1, max_value=1_000_000, value=1000, step=500)
+        note = st.text_input("Note (optional)", placeholder="e.g. invoice / payment reference")
+        if st.form_submit_button("➕ Add plan", type="primary"):
+            target = by_label[who]
+            amount = credits.PLANS.get(choice, int(custom))
+            credits.add_plan(db, amount, target.id, plan=choice if choice in credits.PLANS else None,
+                             note=note, by_user=st.session_state.signed_in_as)
+            new_bal = credits.balance(db, target.id).balance
+            flash("success", f"{amount:,} FLT added to {target.email}. Their balance: {new_bal:,} FLT.")
+            st.rerun()
+
+    # Admin overview: each account's balance.
+    st.markdown("**Balances by account**")
+    rows = []
+    for u in account_users:
+        ub = credits.balance(db, u.id)
+        rows.append({"Account": u.email, "Available": ub.available, "On hold": ub.held,
+                     "Used": ub.used, "Balance": ub.balance})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+    _flt_history(credits.ledger(db), show_user=True, user_email={u.id: u.email for u in account_users})
+
+
+def _flt_history(entries, *, show_user: bool, user_email: dict | None = None) -> None:
+    if not entries:
+        return
+    st.markdown("**History**")
+    user_email = user_email or {}
+    data = []
+    for e in entries:
+        row = {
             "When (UTC)": e["created_at"][:16].replace("T", " "),
             "Type": {"topup": "Plan added", "charge": "Used", "adjust": "Adjustment"}[e["kind"]],
             "FLT": e["amount"], "Plan": e["plan"] or "", "Job": f"#{e['job_id']}" if e["job_id"] else "",
             "Note": e["note"] or "", "By": e["by_user"] or "",
-        } for e in entries]), hide_index=True, width="stretch")
+        }
+        if show_user:
+            row = {"Account": user_email.get(e["user_id"], "—"), **row}
+        data.append(row)
+    st.dataframe(pd.DataFrame(data), hide_index=True, width="stretch")
 
 
 # ------------------------------------------------------ extension tokens
@@ -640,11 +736,12 @@ def page_tokens() -> None:
         name = st.text_input("Staff member / device name", placeholder="e.g. Asha - front desk PC")
         if st.form_submit_button("Create token", type="primary"):
             try:
-                st.session_state["_new_token"] = (name.strip(), lookups.create_token(db, name))
+                st.session_state["_new_token"] = (name.strip(),
+                                                  lookups.create_token(db, name, user_id=CURRENT_USER_ID))
             except lookups.LookupRequestError as exc:
                 flash("error", str(exc))
             st.rerun()
-    tokens = lookups.list_tokens(db)
+    tokens = lookups.list_tokens(db, CURRENT_USER_ID)
     if not tokens:
         st.info("No tokens yet.")
         return
@@ -659,6 +756,55 @@ def page_tokens() -> None:
             st.rerun()
 
 
+# ------------------------------------------------------------ manage users
+def page_users() -> None:
+    if not IS_ADMIN:
+        st.error("Admins only.")
+        return
+    st.title("Manage users")
+    st.caption("You create every account — there is no public sign-up. Enter an email, and a strong "
+               "password is generated for you to hand over. Each person can be signed in on only one "
+               "device at a time; a new sign-in signs the old device out.")
+
+    new = st.session_state.pop("_new_user", None)
+    if new:
+        st.success(f"Account ready for **{new[0]}**. Copy this password now — it is shown only once:")
+        st.code(new[1], language=None)
+
+    with st.form("new_user", clear_on_submit=True):
+        st.markdown("**Add a user**")
+        email = st.text_input("Email", placeholder="person@example.com", autocomplete="off")
+        if st.form_submit_button("Create account", type="primary"):
+            try:
+                user, pw = users.create_user(db, email)
+                st.session_state["_new_user"] = (user.email, pw)
+            except users.UserError as exc:
+                flash("error", str(exc))
+            st.rerun()
+
+    st.divider()
+    st.markdown("**Accounts**")
+    for u in users.list_users(db):
+        c = st.columns([2.4, 1.3, 1.3, 1, 1])
+        label = f"**{u.email}**" + ("  · _admin_" if u.is_admin else "") + ("  · ~~disabled~~" if not u.active else "")
+        c[0].markdown(label)
+        c[1].caption(f"created {u.created_at[:10]}")
+        c[2].caption(f"last seen {(u.last_seen_at or '–')[:16].replace('T', ' ')}")
+        if c[3].button("Reset password", key=f"reset_{u.id}"):
+            pw = users.reset_password(db, u.id)
+            st.session_state["_new_user"] = (u.email, pw)
+            st.rerun()
+        if not u.is_admin:
+            if u.active and c[4].button("Disable", key=f"disable_{u.id}"):
+                users.set_disabled(db, u.id, True)
+                flash("info", f"{u.email} disabled and signed out.")
+                st.rerun()
+            if not u.active and c[4].button("Enable", key=f"enable_{u.id}"):
+                users.set_disabled(db, u.id, False)
+                flash("success", f"{u.email} enabled.")
+                st.rerun()
+
+
 # ---------------------------------------------------------------- router
 job_id = st.session_state.get("current_job")
 if page == "Dashboard":
@@ -669,6 +815,8 @@ elif page == "FLT credits":
     page_credits()
 elif page == "Extension tokens":
     page_tokens()
+elif page == "Manage users":
+    page_users()
 elif job_id is None:
     st.info("No jobs yet. Create one with **New job**.")
 elif page == "Job details":

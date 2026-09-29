@@ -187,6 +187,9 @@ class SiteProfile(BaseModel):
     block_detect: TextDetect = TextDetect(text_contains=DEFAULT_BLOCK_WORDS)
     capture: Capture = Capture()
     settle_ms: int = Field(400, ge=0, le=10000)
+    # A booking that was searched but produced no result page within this long is skipped (SKIPPED),
+    # so one stuck page doesn't halt the run. 0 disables the watchdog. Blocks still pause, not skip.
+    row_timeout_ms: int = Field(30_000, ge=0, le=300_000)
     # If the PNR isn't anywhere in the captured text, flag MISMATCH instead of saving it.
     pnr_check: bool = True
 

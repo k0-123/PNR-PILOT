@@ -23,9 +23,31 @@ def app(settings, monkeypatch):
     get_settings.cache_clear()
 
 
+def admin_id(db):
+    """The bootstrap admin's id (jobs in UI tests must be owned by the signed-in user)."""
+    from app.core.config import get_settings
+    from app import users
+    users.ensure_bootstrap_admin(db, get_settings())
+    return users.get_user(db, EMAIL).id
+
+
 def signed_in(page="Dashboard", job=None):
+    """Seed a valid single-device session for the bootstrap admin (created from APP_EMAIL)."""
+    from app.core.config import get_settings
+    from app.core.db import Database
+    from app import users
+    s = get_settings()
+    d = Database(s.db_path)
+    users.ensure_bootstrap_admin(d, s)
+    u = users.get_user(d, EMAIL)
+    session_id = users.start_session(d, u.id)
+    d.close()
+
     at = AppTest.from_file(UI, default_timeout=30)
-    at.session_state["signed_in_as"] = EMAIL
+    at.session_state["signed_in_as"] = u.email
+    at.session_state["user_id"] = u.id
+    at.session_state["is_admin"] = u.is_admin
+    at.session_state["session_id"] = session_id
     at.session_state["_goto"] = page
     if job is not None:
         at.session_state["_goto_job"] = job
@@ -57,7 +79,7 @@ def test_wrong_password_rejected(app):
 
 
 def test_dashboard_lists_jobs(app, db):
-    make_job(db, [("A", "OKY001")], status=JobStatus.COMPLETED, name="first")
+    make_job(db, [("A", "OKY001")], status=JobStatus.COMPLETED, name="first", user_id=admin_id(db))
     at = signed_in()
     no_errors(at)
     kpis = next(m.value for m in at.markdown if 'class="kpis' in m.value)
@@ -73,7 +95,7 @@ def test_new_job_page_has_no_website_picker(app):
 
 
 def test_job_details_actions(app, db):
-    job = make_job(db, [("A", "OKZ001"), ("B", "OKZ002")], status=JobStatus.READY_FOR_LOOKUP)
+    job = make_job(db, [("A", "OKZ001"), ("B", "OKZ002")], status=JobStatus.READY_FOR_LOOKUP, user_id=admin_id(db))
     at = signed_in("Job details", job)
     no_errors(at)
     labels = [b.label for b in at.button]
@@ -89,7 +111,7 @@ def test_job_details_actions(app, db):
 
 
 def test_review_page_validates_and_approves(app, db):
-    job = make_job(db, [("SHUKLA", "OKR101"), ("PATEL", None)], status=JobStatus.AWAITING_REVIEW)
+    job = make_job(db, [("SHUKLA", "OKR101"), ("PATEL", None)], status=JobStatus.AWAITING_REVIEW, user_id=admin_id(db))
     at = signed_in("Review", job)
     no_errors(at)
     # one review form: surname, first name, PNR inputs
@@ -109,7 +131,7 @@ def test_review_page_validates_and_approves(app, db):
 
 
 def test_results_page_downloads(app, db):
-    job = make_job(db, [("SHUKLA", "OKS101"), ("PATEL", "OKS102")], status=JobStatus.COMPLETED)
+    job = make_job(db, [("SHUKLA", "OKS101"), ("PATEL", "OKS102")], status=JobStatus.COMPLETED, user_id=admin_id(db))
     rows = db.get_rows(job)
     db.save_lookup_result(rows[0]["id"], result={"flight_numbers": "AI 131"}, page_text_path=None,
                           screenshot_path=None)
@@ -127,7 +149,7 @@ def test_results_page_downloads(app, db):
 
 
 def test_job_details_offers_pnr_screen_upload(app, db):
-    job = make_job(db, [("CHEN", "ER7P5B")], status=JobStatus.READY_FOR_LOOKUP)
+    job = make_job(db, [("CHEN", "ER7P5B")], status=JobStatus.READY_FOR_LOOKUP, user_id=admin_id(db))
     db.add_pnr_screen(job, "rt.png", f"screens/job_{job}/rt.png", "image/png", "abc")
     at = signed_in("Job details", job)
     no_errors(at)
@@ -149,7 +171,7 @@ def test_extension_tokens_page_creates_and_revokes(app, db):
 
 
 def test_results_page_fix_and_retry(app, db):
-    job = make_job(db, [("SHUKLA", "OKX101"), ("PATEL", "OKX1O2")], status=JobStatus.COMPLETED_WITH_ERRORS)
+    job = make_job(db, [("SHUKLA", "OKX101"), ("PATEL", "OKX1O2")], status=JobStatus.COMPLETED_WITH_ERRORS, user_id=admin_id(db))
     rows = db.get_rows(job)
     db.finish_row(rows[0]["id"], LookupStatus.PARSED, attempts=1)
     db.finish_row(rows[1]["id"], LookupStatus.NOT_FOUND, attempts=1)
@@ -164,32 +186,52 @@ def test_results_page_fix_and_retry(app, db):
     assert db.get_job(job)["status"] == JobStatus.READY_FOR_LOOKUP
 
 
-def test_flt_credits_only_admin_can_add(app, db, monkeypatch):
-    monkeypatch.setenv("FLT_ADMIN_EMAIL", "boss@example.com")  # the signed-in tester isn't the admin
-    get_settings.cache_clear()
-    at = signed_in("FLT credits")
+def _signed_in_nonadmin(page="FLT credits"):
+    """Sign in as an ordinary (non-admin) account the admin created."""
+    from app.core.config import get_settings as _gs
+    from app.core.db import Database
+    from app import users
+    s = _gs()
+    d = Database(s.db_path)
+    users.ensure_bootstrap_admin(d, s)
+    staff = users.get_user(d, "staff@example.com") or users.create_user(d, "staff@example.com")[0]
+    session_id = users.start_session(d, staff.id)
+    d.close()
+    at = AppTest.from_file(UI, default_timeout=30)
+    at.session_state["signed_in_as"] = staff.email
+    at.session_state["user_id"] = staff.id
+    at.session_state["is_admin"] = False
+    at.session_state["session_id"] = session_id
+    at.session_state["_goto"] = page
+    return at.run()
+
+
+def test_flt_credits_only_admin_can_add(app, db):
+    at = _signed_in_nonadmin("FLT credits")
     no_errors(at)
     assert not [b for b in at.button if b.label == "➕ Add plan"]
-    assert any("Only the FLT admin can add FLT" in c.value for c in at.caption)
+    assert any("Only an admin can add FLT" in c.value for c in at.caption)
     assert not any("AI cost" in m.value for m in at.markdown)
 
 
-def test_flt_credits_page_adds_plan_and_blocks_short_jobs(app, db, monkeypatch):
-    from app import credits
-    monkeypatch.setenv("FLT_ADMIN_EMAIL", EMAIL.upper())  # the admin (email match ignores case)
-    get_settings.cache_clear()
-    at = signed_in("FLT credits")
+def test_flt_credits_page_adds_plan_and_blocks_short_jobs(app, db):
+    from app import credits, users
+    at = signed_in("FLT credits")  # bootstrap admin may add FLT (default account = the admin)
     no_errors(at)
     assert any("FLT credits are off" in i.value for i in at.info)
     next(b for b in at.button if b.label == "➕ Add plan").click().run()  # default choice: Plan 10k
     no_errors(at)
-    assert credits.balance(db).balance == 10_000
-    assert any("Plan added" in str(df.value["Type"].tolist()) for df in at.dataframe)
+    admin_id = users.get_user(db, EMAIL).id
+    assert credits.balance(db, admin_id).balance == 10_000
+    assert any("Plan added" in str(df.value["Type"].tolist())
+               for df in at.dataframe if "Type" in df.value.columns)
 
-    credits.add_plan(db, 1)  # use nearly everything so the next job doesn't fit
-    db.conn.execute("INSERT INTO flt_ledger(created_at, kind, amount) VALUES ('2026-09-25', 'adjust', -10000)")
+    # Drain the admin's own balance to 1 so their next job doesn't fit.
+    db.conn.execute("INSERT INTO flt_ledger(created_at, kind, amount, user_id) VALUES ('2026-09-25','adjust',-9999,?)",
+                    (admin_id,))
     db.conn.commit()
-    job = make_job(db, [("A", "OKU001"), ("B", "OKU002")], status=JobStatus.READY_FOR_LOOKUP)
+    assert credits.balance(db, admin_id).balance == 1
+    job = make_job(db, [("A", "OKU001"), ("B", "OKU002")], status=JobStatus.READY_FOR_LOOKUP, user_id=admin_id)
     at = signed_in("Job details", job)
     next(b for b in at.button if b.label == "▶ Open for lookups").click().run()
     no_errors(at)

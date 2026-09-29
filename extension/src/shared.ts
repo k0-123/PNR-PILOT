@@ -29,6 +29,7 @@ export interface SiteProfile {
   capture: { container_selector: string; screenshot: "always" | "fallback" | "never" };
   settle_ms: number;
   pnr_check: boolean;
+  row_timeout_ms?: number; // skip a searched booking that hasn't resolved in this long (0 = off)
   configured?: boolean;
 }
 
@@ -57,6 +58,7 @@ export type ContentMessage =
   | { type: "notfound"; pnr: string }
   | { type: "mismatch"; pnr: string }
   | { type: "blocked"; pnr: string | null; reason: string }
+  | { type: "timeout"; pnr: string } // searched but no result within row_timeout_ms: skip and move on
   | { type: "status"; text: string }
   | { type: "searched"; pnr: string } // the person pressed Enter / clicked / the page left
   | { type: "hotkey"; key: Hotkey };

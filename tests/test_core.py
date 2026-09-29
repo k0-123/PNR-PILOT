@@ -133,7 +133,7 @@ def test_shipped_configs_load():
     fields = load_result_fields(CONFIG_DIR / "result_fields.yaml")
     assert [f.key for f in fields.fields] == ["full_name", "e_ticket_number", "frequent_flyer_program",
                                               "primary_contact", "origin", "destination",
-                                              "flight_details", "booking_status"]
+                                              "flight_details", "operating_flight", "booking_status"]
     assert not (CONFIG_DIR / "website.yaml").exists()  # no automated website lookups
 
 

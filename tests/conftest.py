@@ -104,9 +104,9 @@ def mock_site():
     server.shutdown()
 
 
-def make_job(db, rows, status=JobStatus.READY_FOR_LOOKUP, name="t"):
+def make_job(db, rows, status=JobStatus.READY_FOR_LOOKUP, name="t", user_id=None):
     """Job with one image and READY rows [(surname, pnr), ...], already in `status`."""
-    job = db.create_job(name)
+    job = db.create_job(name, user_id=user_id)
     image_id, _ = db.add_image(job, "a.png", f"uploads/job_{job}/a.png", "image/png", f"sha-{job}")
     extracted = [validate_row(GeminiRow(**gemini_row(line_no=f"{i:03d}", surname=s, pnr=p)), 0.85)
                  for i, (s, p) in enumerate(rows)]
