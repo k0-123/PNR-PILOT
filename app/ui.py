@@ -209,6 +209,56 @@ CURRENT_USER_ID = st.session_state["user_id"]
 IS_ADMIN = st.session_state.get("is_admin", False)
 
 
+# ------------------------------------------------------- getting started
+def _extension_zip() -> bytes:
+    import io, zipfile
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[1] / "extension" / "dist"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in root.rglob("*"):
+            if f.is_file():
+                z.write(f, f"pnr-pilot-extension/{f.relative_to(root)}")
+    return buf.getvalue()
+
+
+def getting_started_gate() -> None:
+    if st.session_state.get("onboarded"):
+        return
+    api_url = "http://64.227.130.82:8000"
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown(theme.brand("lg"), unsafe_allow_html=True)
+        st.title("Getting started")
+        st.caption("Do this once to enable airline lookups in your browser.")
+
+        st.markdown("### 1 · Download the extension")
+        try:
+            st.download_button("⬇ Download extension (.zip)", _extension_zip(),
+                               file_name="pnr-pilot-extension.zip", type="primary")
+        except Exception as exc:
+            st.error(f"Download unavailable: {exc}")
+        st.caption("Unzip it somewhere permanent (don't delete the folder afterwards).")
+
+        st.markdown("### 2 · Install it in Chrome")
+        st.markdown("- Open **chrome://extensions**\n- Turn on **Developer mode** (top-right)\n"
+                    "- Click **Load unpacked** → pick the unzipped **pnr-pilot-extension** folder")
+
+        st.markdown("### 3 · Connect the extension")
+        st.markdown("Open the extension's side panel → ⚙ settings, and paste:")
+        st.code(f"API address: {api_url}\nToken: ask your admin (Extension tokens page)")
+
+        st.divider()
+        if st.button("Next → Open dashboard", type="primary", width="stretch"):
+            st.session_state["onboarded"] = True
+            st.rerun()
+        st.caption("You can reopen this from the sidebar anytime.")
+    st.stop()
+
+
+getting_started_gate()
+
+
 # --------------------------------------------------------------- sidebar
 if "_goto" in st.session_state:
     st.session_state["page"] = st.session_state.pop("_goto")
