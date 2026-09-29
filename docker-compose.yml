@@ -10,10 +10,10 @@ services:
       - ./config:/app/config:ro        # edit website.yaml / result_fields.yaml without rebuilding
     # Only reachable from the server itself; Caddy/Nginx in front provides HTTPS.
     ports:
-      - "127.0.0.1:8501:8501"
+      - "0.0.0.0:8501:8501"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://0.0.0.0:8501/_stcore/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -32,10 +32,10 @@ services:
       - ./config:/app/config:ro
     # Only reachable from the server itself; Caddy proxies https://<domain>/api to it.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:8000:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://0.0.0.0:8000/api/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
