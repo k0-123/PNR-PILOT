@@ -226,33 +226,59 @@ def getting_started_gate() -> None:
     if st.session_state.get("onboarded"):
         return
     api_url = "http://64.227.130.82:8000"
-    _, mid, _ = st.columns([1, 2, 1])
+    st.markdown("""<style>
+    .gs-wrap{max-width:720px;margin:0 auto;}
+    .gs-hero{text-align:center;margin:.5rem 0 2rem;}
+    .gs-hero h1{font-size:2.4rem;font-weight:800;letter-spacing:-1px;margin:.2rem 0;
+      background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;
+      background-clip:text;color:transparent;}
+    .gs-hero p{color:#64748b;font-size:1rem;margin:0;}
+    .gs-card{display:flex;gap:1rem;background:#fff;border:1px solid #e8eaf0;border-radius:16px;
+      padding:1.25rem 1.4rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+    .gs-num{flex:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;
+      justify-content:center;font-weight:800;color:#fff;font-size:1.05rem;
+      background:linear-gradient(135deg,#2563eb,#7c3aed);}
+    .gs-body h3{margin:.1rem 0 .35rem;font-size:1.12rem;font-weight:700;color:#0f172a;}
+    .gs-body p,.gs-body li{color:#475569;font-size:.92rem;margin:.15rem 0;line-height:1.5;}
+    .gs-body code{background:#f1f5f9;padding:.1rem .4rem;border-radius:6px;font-size:.85rem;}
+    @media (prefers-color-scheme:dark){.gs-card{background:#111827;border-color:#1f2937;}
+      .gs-body h3{color:#f8fafc;}.gs-body p,.gs-body li{color:#94a3b8;}.gs-hero p{color:#94a3b8;}
+      .gs-body code{background:#1f2937;color:#e2e8f0;}}
+    </style>""", unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 2.2, 1])
     with mid:
-        st.markdown(theme.brand("lg"), unsafe_allow_html=True)
-        st.title("Getting started")
-        st.caption("Do this once to enable airline lookups in your browser.")
+        st.markdown('<div class="gs-wrap"><div class="gs-hero">'
+                    '<h1>✈️ Welcome to PNR&nbsp;Pilot</h1>'
+                    '<p>Three quick steps to enable airline lookups in your browser.</p>'
+                    '</div>', unsafe_allow_html=True)
 
-        st.markdown("### 1 · Download the extension")
+        st.markdown('<div class="gs-card"><div class="gs-num">1</div><div class="gs-body">'
+                    '<h3>Download the extension</h3>'
+                    '<p>Unzip it to a permanent folder — don\'t delete it afterwards.</p>'
+                    '</div></div>', unsafe_allow_html=True)
         try:
-            st.download_button("⬇ Download extension (.zip)", _extension_zip(),
-                               file_name="pnr-pilot-extension.zip", type="primary")
+            st.download_button("⬇  Download extension (.zip)", _extension_zip(),
+                               file_name="pnr-pilot-extension.zip", type="primary", width="stretch")
         except Exception as exc:
             st.error(f"Download unavailable: {exc}")
-        st.caption("Unzip it somewhere permanent (don't delete the folder afterwards).")
 
-        st.markdown("### 2 · Install it in Chrome")
-        st.markdown("- Open **chrome://extensions**\n- Turn on **Developer mode** (top-right)\n"
-                    "- Click **Load unpacked** → pick the unzipped **pnr-pilot-extension** folder")
+        st.markdown('<div class="gs-card" style="margin-top:1rem"><div class="gs-num">2</div>'
+                    '<div class="gs-body"><h3>Install it in Chrome</h3>'
+                    '<ul><li>Open <code>chrome://extensions</code></li>'
+                    '<li>Turn on <b>Developer mode</b> (top-right)</li>'
+                    '<li><b>Load unpacked</b> → pick the <b>pnr-pilot-extension</b> folder</li>'
+                    '</ul></div></div>', unsafe_allow_html=True)
 
-        st.markdown("### 3 · Connect the extension")
-        st.markdown("Open the extension's side panel → ⚙ settings, and paste:")
-        st.code(f"API address: {api_url}\nToken: ask your admin (Extension tokens page)")
+        st.markdown('<div class="gs-card"><div class="gs-num">3</div><div class="gs-body">'
+                    '<h3>Connect it</h3><p>In the extension side panel → ⚙ settings, paste:</p>'
+                    f'<p>API address: <code>{api_url}</code><br>'
+                    'Token: <i>ask your admin (Extension tokens page)</i></p>'
+                    '</div></div></div>', unsafe_allow_html=True)
 
-        st.divider()
-        if st.button("Next → Open dashboard", type="primary", width="stretch"):
+        st.write("")
+        if st.button("Next  →  Open dashboard", type="primary", width="stretch"):
             st.session_state["onboarded"] = True
             st.rerun()
-        st.caption("You can reopen this from the sidebar anytime.")
     st.stop()
 
 
