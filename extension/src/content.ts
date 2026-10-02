@@ -149,7 +149,9 @@ function fill(item: Lease, surnameEl: HTMLInputElement, pnrEl: HTMLInputElement)
 function apply(next: ContentInstruction | null): void {
   if (!next) return;
   ins = next;
-  if (next.navigate && next.navigate !== location.href) {
+  // Also reload when already on the search form but it still shows a "not found / not eligible"
+  // message, so the next booking starts on a clean form.
+  if (next.navigate && (next.navigate !== location.href || notFoundShown())) {
     location.assign(next.navigate); // back to the search form (not a search: nothing is submitted)
     return;
   }
@@ -247,16 +249,24 @@ function evaluate(): void {
     }
     return;
   }
-  if (ins.paused) return status("Paused (Alt+P to continue)");
+  if (ins.paused) {
+    stuckSince = 0;
+    return status("Paused (Alt+P to continue)");
+  }
   const item = ins.item;
   if (!item) return status("Waiting for bookings…");
 
   // 2. "Booking not found" message (only after the person searched this booking).
   const nf = profile.not_found_detect;
-  if (ins.searched && (find(nf.selector) || includesAny(text, nf.text_contains))) {
+  // MH shows these messages above the search form itself, so a message still on screen from the
+  // previous booking must not count for this one: ignore it for NF_STALE_MS after the search.
+  const nfWord = includesAny(text, nf.text_contains);
+  const nfStale = nfAtSearch && Date.now() - (ins.lastSearchAt ?? 0) < NF_STALE_MS;
+  if (ins.searched && !nfStale && (find(nf.selector) || nfWord)) {
     if (!handled) {
       handled = true;
-      void send({ type: "notfound", pnr: item.pnr }).then(apply);
+      log("not found / not retrievable:", item.pnr, nfWord ?? "(selector)");
+      void send({ type: "notfound", pnr: item.pnr, reason: nfWord ?? undefined }).then(apply);
     }
     return;
   }
@@ -290,6 +300,7 @@ function evaluate(): void {
   const surnameEl = find(profile.fields.surname.selector) as HTMLInputElement | null;
   const pnrEl = find(profile.fields.pnr.selector) as HTMLInputElement | null;
   if (surnameEl && pnrEl) {
+    stuckSince = 0;
     const stale = !filledFor || filledFor.pnr !== item.pnr || filledFor.surnameEl !== surnameEl ||
       filledFor.pnrEl !== pnrEl || pnrEl.value !== item.pnr;
     if (stale) fill(item, surnameEl, pnrEl);
@@ -301,7 +312,29 @@ function evaluate(): void {
     return;
   }
   // 5. Some other page of the site (still loading, or not the search form yet).
+  // A booking not searched yet that sits on a page without the search form (e.g. an earlier
+  // booking's late-loading result page) is taken back to the search form after STUCK_MS,
+  // instead of waiting forever. Not for a Back/re-capture, where the person reads that page.
+  if (!ins.searched && !item.recapture && profile.search_url) {
+    if (!stuckSince) stuckSince = Date.now();
+    else if (Date.now() - stuckSince > STUCK_MS && location.href !== profile.search_url) {
+      log("no search form for", STUCK_MS, "ms: back to the search form for", item.pnr);
+      stuckSince = 0;
+      location.assign(profile.search_url); // the search form only: nothing is submitted
+      return;
+    }
+  }
   if (!handled) status(`On ${location.hostname}: waiting for the result or the search form…`);
+}
+
+const STUCK_MS = 15_000;
+let stuckSince = 0;
+const NF_STALE_MS = 4_000;
+let nfAtSearch = false; // a not-found message was already on screen when this booking was searched
+
+function notFoundShown(): boolean {
+  const nf = ins?.profile?.not_found_detect;
+  return !!nf && (!!find(nf.selector) || !!includesAny(pageText(), nf.text_contains));
 }
 
 const OPEN_FORM_TRIES = 3;
@@ -358,6 +391,10 @@ function noteSearched(): void {
   const pnr = ins?.item?.pnr;
   if (!ins?.running || !pnr || !filledFor || filledFor.pnr !== pnr || ins.searched) return;
   ins.searched = true;
+  // The row_timeout_ms watchdog counts from here. Without this it counted from the PREVIOUS
+  // booking's search, so a booking could be "timed out" a second after its own search (job 17).
+  ins.lastSearchAt = Date.now();
+  nfAtSearch = notFoundShown();
   log("search noticed for", pnr);
   void send({ type: "searched", pnr });
 }

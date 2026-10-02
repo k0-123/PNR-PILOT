@@ -155,7 +155,7 @@
 	function apply(next) {
 		if (!next) return;
 		ins = next;
-		if (next.navigate && next.navigate !== location.href) {
+		if (next.navigate && (next.navigate !== location.href || notFoundShown())) {
 			location.assign(next.navigate);
 			return;
 		}
@@ -248,16 +248,23 @@
 			}
 			return;
 		}
-		if (ins.paused) return status("Paused (Alt+P to continue)");
+		if (ins.paused) {
+			stuckSince = 0;
+			return status("Paused (Alt+P to continue)");
+		}
 		const item = ins.item;
 		if (!item) return status("Waiting for bookings…");
 		const nf = profile.not_found_detect;
-		if (ins.searched && (find(nf.selector) || includesAny(text, nf.text_contains))) {
+		const nfWord = includesAny(text, nf.text_contains);
+		const nfStale = nfAtSearch && Date.now() - (ins.lastSearchAt ?? 0) < NF_STALE_MS;
+		if (ins.searched && !nfStale && (find(nf.selector) || nfWord)) {
 			if (!handled) {
 				handled = true;
+				log("not found / not retrievable:", item.pnr, nfWord ?? "(selector)");
 				send({
 					type: "notfound",
-					pnr: item.pnr
+					pnr: item.pnr,
+					reason: nfWord ?? void 0
 				}).then(apply);
 			}
 			return;
@@ -287,6 +294,7 @@
 		const surnameEl = find(profile.fields.surname.selector);
 		const pnrEl = find(profile.fields.pnr.selector);
 		if (surnameEl && pnrEl) {
+			stuckSince = 0;
 			if (!filledFor || filledFor.pnr !== item.pnr || filledFor.surnameEl !== surnameEl || filledFor.pnrEl !== pnrEl || pnrEl.value !== item.pnr) fill(item, surnameEl, pnrEl);
 			if (!rendered(surnameEl) || !rendered(pnrEl)) {
 				if (!ins.searched) openForm(pnrEl);
@@ -295,7 +303,24 @@
 			status(scheduleContinue(item, surnameEl, pnrEl) ?? `Ready — press Enter · ${item.pnr}`);
 			return;
 		}
+		if (!ins.searched && !item.recapture && profile.search_url) {
+			if (!stuckSince) stuckSince = Date.now();
+			else if (Date.now() - stuckSince > STUCK_MS && location.href !== profile.search_url) {
+				log("no search form for", STUCK_MS, "ms: back to the search form for", item.pnr);
+				stuckSince = 0;
+				location.assign(profile.search_url);
+				return;
+			}
+		}
 		if (!handled) status(`On ${location.hostname}: waiting for the result or the search form…`);
+	}
+	var STUCK_MS = 15e3;
+	var stuckSince = 0;
+	var NF_STALE_MS = 4e3;
+	var nfAtSearch = false;
+	function notFoundShown() {
+		const nf = ins?.profile?.not_found_detect;
+		return !!nf && (!!find(nf.selector) || !!includesAny(pageText(), nf.text_contains));
 	}
 	var OPEN_FORM_TRIES = 3;
 	var OPEN_FORM_RETRY_MS = 1500;
@@ -342,6 +367,8 @@
 		const pnr = ins?.item?.pnr;
 		if (!ins?.running || !pnr || !filledFor || filledFor.pnr !== pnr || ins.searched) return;
 		ins.searched = true;
+		ins.lastSearchAt = Date.now();
+		nfAtSearch = notFoundShown();
 		log("search noticed for", pnr);
 		send({
 			type: "searched",

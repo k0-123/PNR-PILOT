@@ -236,10 +236,16 @@ function instruction(s: State, extra: Partial<ContentInstruction> = {}): Content
   };
 }
 
-async function pokeContent(): Promise<void> {
+async function pokeContent(key?: Hotkey): Promise<void> {
   const s = await load();
   if (s.tabId === null) return;
-  chrome.tabs.sendMessage(s.tabId, { type: "instruction", instruction: instruction(s) }).catch(() => undefined);
+  const ins = instruction(s, key ? toSearchForm(s, key) : {});
+  chrome.tabs.sendMessage(s.tabId, { type: "instruction", instruction: ins }).catch(() => undefined);
+}
+
+/** Skip / Not found leave the booking on screen: go back to the search form, like a timeout does. */
+function toSearchForm(s: State, key: Hotkey): Partial<ContentInstruction> {
+  return key === "skip" || key === "notfound" ? { navigate: s.profile?.search_url } : {};
 }
 
 async function screenshot(s: State, textLength: number, windowId: number | undefined): Promise<string | null> {
@@ -290,11 +296,13 @@ async function onContent(msg: ContentMessage, sender: chrome.runtime.MessageSend
       case "mismatch": {
         if (job === null || current?.pnr !== msg.pnr || s.searched !== msg.pnr) return instruction(s);
         const status = msg.type === "notfound" ? "NOT_FOUND" : "MISMATCH";
-        await queueUpload(s, job, msg.pnr, "status", { status });
+        const reason = msg.type === "notfound" ? msg.reason : undefined;
+        // The site's own wording goes to the Error column, e.g. "not eligible for retrieval".
+        await queueUpload(s, job, msg.pnr, "status", { status, note: reason ? `website says: ${reason}` : undefined });
         advance(s);
         if (msg.type === "notfound") {
           s.session.notFound += 1;
-          s.statusLine = `Not found: ${msg.pnr}`;
+          s.statusLine = `Not found: ${msg.pnr}${reason ? ` (${reason})` : ""}`;
         } else {
           s.session.problems += 1;
           s.warning = `The page showed another booking than ${msg.pnr}. Not saved (marked MISMATCH). Press Back (Alt+B) to try it again.`;
@@ -325,7 +333,7 @@ async function onContent(msg: ContentMessage, sender: chrome.runtime.MessageSend
       }
       case "hotkey":
         await hotkey(s, msg.key);
-        return instruction(s);
+        return instruction(s, toSearchForm(s, msg.key));
     }
   });
 }
@@ -474,7 +482,7 @@ async function onPanel(msg: PanelMessage): Promise<unknown> {
         const s = await load();
         if (s.tabId !== null) chrome.tabs.sendMessage(s.tabId, { type: "recapture" }).catch(() => undefined);
       }
-      await pokeContent();
+      await pokeContent(msg.key);
       return { ok: true };
   }
 }

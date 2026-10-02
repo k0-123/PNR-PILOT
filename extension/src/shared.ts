@@ -55,7 +55,7 @@ export interface PanelState {
 export type ContentMessage =
   | { type: "hello"; url: string }
   | { type: "result"; pnr: string; text: string; url: string; recapture?: boolean }
-  | { type: "notfound"; pnr: string }
+  | { type: "notfound"; pnr: string; reason?: string } // reason: the site's message that matched
   | { type: "mismatch"; pnr: string }
   | { type: "blocked"; pnr: string | null; reason: string }
   | { type: "timeout"; pnr: string } // searched but no result within row_timeout_ms: skip and move on

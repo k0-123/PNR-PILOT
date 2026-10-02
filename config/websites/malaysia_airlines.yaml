@@ -50,11 +50,16 @@ not_found_detect:
     - "unable to retrieve"
     - "booking could not be found"
     - "no booking found"
+    # Shown above the search form for bookings MH won't open online (job 19, 2026-10-02:
+    # D35839, 7FBGZR, 7FARC3 - mostly group bookings): "The ticket number is not eligible for
+    # retrieval." These were waiting out the 60 s timer and ending as SKIPPED.
+    - "not eligible for retrieval"
 capture:
   container_selector: "body"       # read the whole result page
   screenshot: fallback
 settle_ms: 3500                    # MH reloads the confirmation page in steps and can briefly show the
                                    # PREVIOUS booking; wait until it has not changed for 3.5 s before reading,
                                    # so pnr_check sees the newly searched booking (was 1.5 s -> stale reads).
-row_timeout_ms: 45000              # skip a booking that shows no result within 45 s and move to the next
+row_timeout_ms: 60000              # skip a booking that shows no result within 60 s (from ITS OWN search) and move on;
+                                   # 45 -> 60 s on 2026-10-02: big group PNRs (6-20 passengers) load slowly
 pnr_check: true

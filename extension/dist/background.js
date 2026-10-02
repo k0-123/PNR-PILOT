@@ -264,13 +264,18 @@ function instruction(s, extra = {}) {
 		...extra
 	};
 }
-async function pokeContent() {
+async function pokeContent(key) {
 	const s = await load();
 	if (s.tabId === null) return;
+	const ins = instruction(s, key ? toSearchForm(s, key) : {});
 	chrome.tabs.sendMessage(s.tabId, {
 		type: "instruction",
-		instruction: instruction(s)
+		instruction: ins
 	}).catch(() => void 0);
+}
+/** Skip / Not found leave the booking on screen: go back to the search form, like a timeout does. */
+function toSearchForm(s, key) {
+	return key === "skip" || key === "notfound" ? { navigate: s.profile?.search_url } : {};
 }
 async function screenshot(s, textLength, windowId) {
 	const mode = s.profile?.capture.screenshot ?? "fallback";
@@ -325,11 +330,15 @@ async function onContent(msg, sender) {
 			case "mismatch": {
 				if (job === null || current?.pnr !== msg.pnr || s.searched !== msg.pnr) return instruction(s);
 				const status = msg.type === "notfound" ? "NOT_FOUND" : "MISMATCH";
-				await queueUpload(s, job, msg.pnr, "status", { status });
+				const reason = msg.type === "notfound" ? msg.reason : void 0;
+				await queueUpload(s, job, msg.pnr, "status", {
+					status,
+					note: reason ? `website says: ${reason}` : void 0
+				});
 				advance(s);
 				if (msg.type === "notfound") {
 					s.session.notFound += 1;
-					s.statusLine = `Not found: ${msg.pnr}`;
+					s.statusLine = `Not found: ${msg.pnr}${reason ? ` (${reason})` : ""}`;
 				} else {
 					s.session.problems += 1;
 					s.warning = `The page showed another booking than ${msg.pnr}. Not saved (marked MISMATCH). Press Back (Alt+B) to try it again.`;
@@ -361,7 +370,7 @@ async function onContent(msg, sender) {
 				return instruction(s);
 			case "hotkey":
 				await hotkey(s, msg.key);
-				return instruction(s);
+				return instruction(s, toSearchForm(s, msg.key));
 		}
 	});
 }
@@ -532,7 +541,7 @@ async function onPanel(msg) {
 				const s = await load();
 				if (s.tabId !== null) chrome.tabs.sendMessage(s.tabId, { type: "recapture" }).catch(() => void 0);
 			}
-			await pokeContent();
+			await pokeContent(msg.key);
 			return { ok: true };
 	}
 }
