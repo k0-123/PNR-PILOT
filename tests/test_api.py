@@ -262,3 +262,14 @@ def test_duplicate_rows_do_not_create_extra_lookups(client, db, token):
     assert [r["extraction_status"] for r in db.get_rows(job)] == [ExtractionStatus.READY, ExtractionStatus.DUPLICATE]
     got = client.post(f"/api/jobs/{job}/claim", headers=hdr(token)).json()["leases"]
     assert len(got) == 1 and len(got[0]["passengers"]) == 1
+
+
+def test_job_airline_reaches_the_extension(client, db, token):
+    from app.jobs import start_lookups
+    from tests.conftest import make_job
+    assert lookups.airline_choices(db) == {"malaysia_airlines": "Malaysia Airlines", "saudia": "Saudia"}
+    job = make_job(db, [("ABOUHARB", "0654859768977")])
+    db.update_job(job, website_config_name="saudia")
+    start_lookups(db, job)
+    listed = {j["id"]: j for j in client.get("/api/jobs", headers=hdr(token)).json()}
+    assert listed[job]["airline"] == "saudia"

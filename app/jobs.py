@@ -50,11 +50,12 @@ def _uncharged(db: Database, job_id: int, statuses) -> int:
 
 # --------------------------------------------------------------- creating
 def create_job(db: Database, storage: LocalStorage, settings: Settings, name: str,
-               files: list[tuple[str, bytes]], user_id: int | None = None) -> int:
+               files: list[tuple[str, bytes]], user_id: int | None = None,
+               airline: str = "website") -> int:
     """Store uploads and queue the job for extraction (status PENDING). `user_id` owns the job."""
     if not files:
         raise JobActionError("no images uploaded")
-    job_id = db.create_job(name, user_id=user_id)
+    job_id = db.create_job(name, airline, user_id=user_id)  # airline = site profile name, e.g. "saudia"
     try:
         add_images(db, storage, settings, job_id, files)
     except Exception:

@@ -265,7 +265,16 @@
 		const saved = (await chrome.storage.local.get("profileName")).profileName;
 		for (const p of profiles.data) profSel.add(new Option(p.title + (p.configured ? "" : " (not set up yet)"), p.name, false, p.name === saved));
 		if (state?.jobId) jobSel.value = String(state.jobId);
+		jobAirlines = new Map(jobs.data.map((j) => [String(j.id), j.airline ?? ""]));
+		pickJobAirline();
 		await loadProfileOrigins();
+	}
+	var jobAirlines = /* @__PURE__ */ new Map();
+	/** The job's airline (chosen when the sheet was uploaded) selects the website automatically. */
+	function pickJobAirline() {
+		const airline = jobAirlines.get($("job").value);
+		const profSel = $("profile");
+		if (airline && Array.from(profSel.options).some((o) => o.value === airline)) profSel.value = airline;
 	}
 	async function loadProfileOrigins() {
 		const name = $("profile").value;
@@ -367,6 +376,10 @@
 	}));
 	$("download").addEventListener("click", () => void downloadExcel());
 	$("profile").addEventListener("change", () => void loadProfileOrigins());
+	$("job").addEventListener("change", () => {
+		pickJobAirline();
+		loadProfileOrigins();
+	});
 	for (const b of document.querySelectorAll("[data-key]")) b.addEventListener("click", () => hotkey(b.dataset.key));
 	window.addEventListener("keydown", (e) => {
 		if (!e.altKey || e.ctrlKey || e.metaKey) return;

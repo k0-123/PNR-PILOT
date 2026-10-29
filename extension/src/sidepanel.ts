@@ -48,7 +48,7 @@ async function saveSettings(): Promise<void> {
 // -------------------------------------------------------------------- lists
 async function loadLists(): Promise<void> {
   const [jobs, profiles] = await Promise.all([
-    call<{ id: number; name: string; status: string; remaining: number }[]>("/api/jobs"),
+    call<{ id: number; name: string; status: string; remaining: number; airline?: string }[]>("/api/jobs"),
     call<{ name: string; title: string; configured: boolean }[]>("/api/site-profiles"),
   ]);
   const jobSel = $<HTMLSelectElement>("job");
@@ -68,7 +68,18 @@ async function loadLists(): Promise<void> {
     profSel.add(new Option(p.title + (p.configured ? "" : " (not set up yet)"), p.name, false, p.name === saved));
   }
   if (state?.jobId) jobSel.value = String(state.jobId);
+  jobAirlines = new Map(jobs.data!.map((j) => [String(j.id), j.airline ?? ""]));
+  pickJobAirline();
   await loadProfileOrigins();
+}
+
+let jobAirlines = new Map<string, string>();
+
+/** The job's airline (chosen when the sheet was uploaded) selects the website automatically. */
+function pickJobAirline(): void {
+  const airline = jobAirlines.get($<HTMLSelectElement>("job").value);
+  const profSel = $<HTMLSelectElement>("profile");
+  if (airline && Array.from(profSel.options).some((o) => o.value === airline)) profSel.value = airline;
 }
 
 async function loadProfileOrigins(): Promise<void> {
@@ -180,6 +191,10 @@ $("refresh").addEventListener("click", () => void loadLists());
 $("auto").addEventListener("change", () => void bg({ type: "setAuto", on: $<HTMLInputElement>("auto").checked }));
 $("download").addEventListener("click", () => void downloadExcel());
 $("profile").addEventListener("change", () => void loadProfileOrigins());
+$("job").addEventListener("change", () => {
+  pickJobAirline();
+  void loadProfileOrigins();
+});
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-key]")) {
   b.addEventListener("click", () => hotkey(b.dataset.key as Hotkey));
 }

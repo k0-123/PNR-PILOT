@@ -118,6 +118,7 @@ def open_jobs(db: Database, user_id: int | None = None) -> list[dict]:
         if j["status"] in LISTED_STATUSES and j["lookup_requested"]:
             p = job_progress(db, j["id"])
             out.append({"id": j["id"], "name": j["name"], "status": j["status"],
+                        "airline": j["website_config_name"],
                         "remaining": p.remaining, "eligible": p.eligible, "error": j["error_message"]})
     return out
 
@@ -372,6 +373,20 @@ def get_site_profile(db: Database, name: str) -> SiteProfile:
     if name not in files:
         raise LookupRequestError(f"site profile {name!r} not found", 404)
     return load_site_profile(files[name])
+
+
+def airline_choices(db: Database) -> dict[str, str]:
+    """Usable airlines for the New job picker: profile name -> title (e.g. "saudia" -> "Saudia").
+    The local mock demo site is left out."""
+    out = {}
+    for name in site_profile_names(db):
+        try:
+            p = get_site_profile(db, name)
+        except (LookupRequestError, ValueError):
+            continue
+        if name != "mock_demo" and not p.is_placeholder:
+            out[name] = p.name
+    return out
 
 
 def site_profile_names(db: Database) -> list[str]:

@@ -353,8 +353,10 @@ def page_dashboard() -> None:
     if not all_jobs:
         st.info("No jobs yet. Create one with **New job**.")
         return
+    airlines = lookups.airline_choices(db)  # old jobs (no airline chosen) show a dash
     df = pd.DataFrame([{
-        "ID": j["id"], "Name": j["name"], "Status": j["status"], "Images": j["images"],
+        "ID": j["id"], "Name": j["name"], "Airline": airlines.get(j["website_config_name"], "—"),
+        "Status": j["status"], "Images": j["images"],
         "Rows": j["rows_total"], "Review": j["rows_review"], "Success": j["rows_success"],
         "Not found": j["rows_not_found"], "Failed": j["rows_failed"],
         "Cost ($)": round(j["total_cost_usd"], 4), "Created": j["created_at"][:16].replace("T", " "),
@@ -374,7 +376,11 @@ def page_new_job() -> None:
     intro("Upload the GDS photos. The worker reads every passenger row, flags anything unsure for "
           "review, and keeps going if you close this tab.")
 
+    airlines = lookups.airline_choices(db)
     with st.form("new_job", clear_on_submit=True):
+        airline = st.selectbox("Airline", list(airlines), format_func=airlines.get, index=None,
+                               placeholder="Choose the airline of this sheet",
+                               help="The extension opens this airline's website for the job's bookings.")
         files = st.file_uploader(f"GDS photos (PNG, JPG, JPEG, WEBP · max {settings.max_file_size_mb:g} MB each)",
                                  type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
         name = st.text_input("Job name (optional)")
@@ -382,12 +388,16 @@ def page_new_job() -> None:
     st.caption(f"After you create the job, the worker reads the images, {settings.gemini_concurrency} at a time. "
                "You can close this tab; the job keeps running.")
     if submitted:
+        if not airline:
+            st.warning("Choose the airline first.")
+            return
         if not files:
             st.warning("Choose at least one image.")
             return
         try:
             job_id = jobs.create_job(db, storage, settings, name.strip() or Path(files[0].name).stem,
-                                     [(f.name, f.getvalue()) for f in files], user_id=CURRENT_USER_ID)
+                                     [(f.name, f.getvalue()) for f in files], user_id=CURRENT_USER_ID,
+                                     airline=airline)
         except (StorageError, jobs.JobActionError) as exc:
             st.error(str(exc))
             return
