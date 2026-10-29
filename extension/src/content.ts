@@ -10,9 +10,11 @@ import {
   HOTKEYS,
   includesAny,
   isSelectorSet,
+  isTicket,
   pnrOnPage,
   type ContentInstruction,
   type ContentMessage,
+  type FieldSpec,
   type Lease,
 } from "./shared";
 
@@ -98,6 +100,27 @@ function find(selector: string | null | undefined): HTMLElement | null {
   } catch {
     return null; // invalid selector in the profile
   }
+}
+
+const TEXT_INPUTS = "input:not([type=hidden]):not([type=radio]):not([type=checkbox]):not([type=submit]):not([type=button])";
+
+/** Visible label text of an input: placeholder, aria-label, aria-labelledby and <label>s. */
+function labelOf(el: HTMLInputElement): string {
+  const parts = [el.placeholder, el.getAttribute("aria-label") ?? ""];
+  for (const id of (el.getAttribute("aria-labelledby") ?? "").split(/\s+/).filter(Boolean)) {
+    parts.push(document.getElementById(id)?.textContent ?? "");
+  }
+  for (const l of Array.from(el.labels ?? [])) parts.push(l.textContent ?? "");
+  return parts.join(" ").replace(/\s+/g, " ").toLowerCase();
+}
+
+/** A search-form input: the profile's selector, else the input whose label contains spec.label. */
+function findField(spec: FieldSpec): HTMLInputElement | null {
+  const bySelector = find(spec.selector) as HTMLInputElement | null;
+  const label = spec.label?.trim().toLowerCase();
+  if (bySelector || !label) return bySelector;
+  const all = Array.from(document.querySelectorAll<HTMLInputElement>(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label));
+  return all.find(rendered) ?? all[0] ?? null;
 }
 
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "IFRAME"]);
@@ -188,7 +211,7 @@ async function capture(item: Lease, recapture: boolean): Promise<void> {
   const stableNeeded = Math.max(profile.settle_ms, MIN_STABLE_MS);
   let stableFor = 0;
   while (Date.now() < until && stableFor < stableNeeded) {
-    status(pnrOnPage(text, item.pnr) ? "Reading result… waiting for the page to finish loading"
+    status(isTicket(item.pnr) || pnrOnPage(text, item.pnr) ? "Reading result… waiting for the page to finish loading"
       : `Reading result… waiting for ${item.pnr} to appear`);
     await sleep(CAPTURE_TICK_MS);
     const next = captureText();
@@ -196,7 +219,9 @@ async function capture(item: Lease, recapture: boolean): Promise<void> {
     text = next;
   }
   log("capture:", item.pnr, "visible chars", text.length, "PNR on page", pnrOnPage(text, item.pnr));
-  if (profile.pnr_check && !pnrOnPage(text, item.pnr)) {
+  // A ticket search opens a page that shows the booking reference, usually not the ticket: the
+  // server checks it instead (ticket or the row's surname on the page, else MISMATCH).
+  if (profile.pnr_check && !isTicket(item.pnr) && !pnrOnPage(text, item.pnr)) {
     const last = ins?.lastDone;
     if (!recapture && last && pnrOnPage(text, last.pnr)) {
       // An earlier result page (browser Back): not a mismatch for the booking now in the queue.
@@ -220,7 +245,7 @@ function isResultPage(): boolean {
   const selSet = isSelectorSet(rd.selector);
   if (rd.pnr_visible) {
     // No search form on the page, and the booking's PNR (or the one just done) is shown.
-    const formGone = !find(profile.fields.surname.selector) && !find(profile.fields.pnr.selector);
+    const formGone = !findField(profile.fields.surname) && !findField(profile.fields.pnr);
     const text = pageText();
     const shown = [ins?.item?.pnr, ins?.lastDone?.pnr].some((p) => !!p && pnrOnPage(text, p));
     if (!(formGone && shown)) return false;
@@ -297,8 +322,8 @@ function evaluate(): void {
   }
 
   // 4. Search form: fill it and wait for the person to press Enter.
-  const surnameEl = find(profile.fields.surname.selector) as HTMLInputElement | null;
-  const pnrEl = find(profile.fields.pnr.selector) as HTMLInputElement | null;
+  const surnameEl = findField(profile.fields.surname);
+  const pnrEl = findField(profile.fields.pnr);
   if (surnameEl && pnrEl) {
     stuckSince = 0;
     const stale = !filledFor || filledFor.pnr !== item.pnr || filledFor.surnameEl !== surnameEl ||
@@ -414,16 +439,33 @@ function disabled(button: HTMLElement): boolean {
   return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
 }
 
-/** The Continue/submit button of the form that holds the PNR field. */
+const BUTTON_SEARCH_LEVELS = 6; // how far up from the PNR field to look when there is no <form>
+
+/**
+ * The Continue/submit button of the form that holds the PNR field. Sites without a <form>
+ * element (e.g. Saudia's Angular manage-booking box): the nearest enclosing block that has an
+ * explicit submit button or one labelled auto_submit.button_text. Never just any button there.
+ */
 function continueButton(pnrEl: HTMLElement): HTMLElement | null {
-  const form = pnrEl.closest("form");
-  if (!form) return null;
-  const buttons = Array.from(form.querySelectorAll<HTMLElement>("button, input[type=submit]")).filter(rendered);
   const text = ins?.profile?.auto_submit?.button_text?.trim().toLowerCase();
   const label = (b: HTMLElement) => ((b as HTMLInputElement).value || b.innerText || "").trim().toLowerCase();
-  return buttons.find((b) => b.getAttribute("type") === "submit" || (b.tagName === "BUTTON" && !b.getAttribute("type")))
-    ?? (text ? buttons.find((b) => label(b) === text) : undefined)
-    ?? null;
+  const buttonsIn = (root: Element) =>
+    Array.from(root.querySelectorAll<HTMLElement>("button, input[type=submit]")).filter(rendered);
+  const form = pnrEl.closest("form");
+  if (form) {
+    const buttons = buttonsIn(form);
+    return buttons.find((b) => b.getAttribute("type") === "submit" || (b.tagName === "BUTTON" && !b.getAttribute("type")))
+      ?? (text ? buttons.find((b) => label(b) === text) : undefined)
+      ?? null;
+  }
+  let root: Element | null = pnrEl.parentElement;
+  for (let level = 0; root && level < BUTTON_SEARCH_LEVELS; level++, root = root.parentElement) {
+    const buttons = buttonsIn(root);
+    const hit = (text ? buttons.find((b) => label(b) === text) : undefined)
+      ?? buttons.find((b) => b.getAttribute("type") === "submit");
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function autoReady(item: Lease, surnameEl: HTMLInputElement, pnrEl: HTMLInputElement): boolean {

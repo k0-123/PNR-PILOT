@@ -118,7 +118,7 @@ def test_review_page_validates_and_approves(app, db):
     pnr_box = next(t for t in at.text_input if t.label == "PNR")
     pnr_box.input("AB1")
     next(b for b in at.button if b.label == "✔ Approve").click().run()
-    assert any("PNR must be exactly 6" in e.value for e in at.error)
+    assert any("PNR must be 6" in e.value for e in at.error)
     assert db.get_rows(job)[1]["extraction_status"] == ExtractionStatus.NEEDS_REVIEW
 
     next(t for t in at.text_input if t.label == "PNR").input("OKR102")

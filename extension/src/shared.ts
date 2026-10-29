@@ -15,11 +15,17 @@ export interface Lease {
   recapture?: boolean; // set by Back (Alt+B): the next capture replaces the earlier one
 }
 
+/** A search-form input: CSS selector, plus optional visible label text as a fallback. */
+export interface FieldSpec {
+  selector: string;
+  label?: string | null;
+}
+
 export interface SiteProfile {
   name: string;
   search_url: string;
   match_urls: string[];
-  fields: { surname: { selector: string }; pnr: { selector: string } };
+  fields: { surname: FieldSpec; pnr: FieldSpec };
   focus_after_fill: "surname" | "pnr";
   open_form?: { selector: string | null; text: string | null } | null;
   auto_submit?: { allowed: boolean; min_gap_ms: number; max_gap_ms?: number; button_text: string | null } | null;
@@ -99,6 +105,11 @@ export function includesAny(haystack: string, needles: string[] | null | undefin
 export function pnrOnPage(text: string, pnr: string): boolean {
   const re = new RegExp(`(^|[^A-Z0-9])${pnr.toUpperCase()}([^A-Z0-9]|$)`);
   return re.test(text.toUpperCase());
+}
+
+/** The lookup key is a 13-digit e-ticket number (e.g. Saudia searches by ticket), not a PNR. */
+export function isTicket(key: string): boolean {
+  return /^\d{13}$/.test(key);
 }
 
 export function isSelectorSet(sel: string | null | undefined): sel is string {

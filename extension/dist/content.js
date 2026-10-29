@@ -19,6 +19,10 @@
 	function pnrOnPage(text, pnr) {
 		return new RegExp(`(^|[^A-Z0-9])${pnr.toUpperCase()}([^A-Z0-9]|$)`).test(text.toUpperCase());
 	}
+	/** The lookup key is a 13-digit e-ticket number (e.g. Saudia searches by ticket), not a PNR. */
+	function isTicket(key) {
+		return /^\d{13}$/.test(key);
+	}
 	function isSelectorSet(sel) {
 		return !!sel && sel.trim() !== "" && !sel.includes("TODO");
 	}
@@ -100,6 +104,22 @@
 		} catch {
 			return null;
 		}
+	}
+	var TEXT_INPUTS = "input:not([type=hidden]):not([type=radio]):not([type=checkbox]):not([type=submit]):not([type=button])";
+	/** Visible label text of an input: placeholder, aria-label, aria-labelledby and <label>s. */
+	function labelOf(el) {
+		const parts = [el.placeholder, el.getAttribute("aria-label") ?? ""];
+		for (const id of (el.getAttribute("aria-labelledby") ?? "").split(/\s+/).filter(Boolean)) parts.push(document.getElementById(id)?.textContent ?? "");
+		for (const l of Array.from(el.labels ?? [])) parts.push(l.textContent ?? "");
+		return parts.join(" ").replace(/\s+/g, " ").toLowerCase();
+	}
+	/** A search-form input: the profile's selector, else the input whose label contains spec.label. */
+	function findField(spec) {
+		const bySelector = find(spec.selector);
+		const label = spec.label?.trim().toLowerCase();
+		if (bySelector || !label) return bySelector;
+		const all = Array.from(document.querySelectorAll(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label));
+		return all.find(rendered) ?? all[0] ?? null;
 	}
 	var SKIP_TAGS = /* @__PURE__ */ new Set([
 		"SCRIPT",
@@ -183,14 +203,14 @@
 		const stableNeeded = Math.max(profile.settle_ms, MIN_STABLE_MS);
 		let stableFor = 0;
 		while (Date.now() < until && stableFor < stableNeeded) {
-			status(pnrOnPage(text, item.pnr) ? "Reading result… waiting for the page to finish loading" : `Reading result… waiting for ${item.pnr} to appear`);
+			status(isTicket(item.pnr) || pnrOnPage(text, item.pnr) ? "Reading result… waiting for the page to finish loading" : `Reading result… waiting for ${item.pnr} to appear`);
 			await sleep(CAPTURE_TICK_MS);
 			const next = captureText();
 			stableFor = next === text ? stableFor + CAPTURE_TICK_MS : 0;
 			text = next;
 		}
 		log("capture:", item.pnr, "visible chars", text.length, "PNR on page", pnrOnPage(text, item.pnr));
-		if (profile.pnr_check && !pnrOnPage(text, item.pnr)) {
+		if (profile.pnr_check && !isTicket(item.pnr) && !pnrOnPage(text, item.pnr)) {
 			const last = ins?.lastDone;
 			if (!recapture && last && pnrOnPage(text, last.pnr)) return status(`This is ${last.pnr} (already captured). Alt+R re-captures it.`);
 			status(`⚠ This page doesn't show ${item.pnr}`);
@@ -218,7 +238,7 @@
 		const urlSet = !!rd.url_contains;
 		const selSet = isSelectorSet(rd.selector);
 		if (rd.pnr_visible) {
-			const formGone = !find(profile.fields.surname.selector) && !find(profile.fields.pnr.selector);
+			const formGone = !findField(profile.fields.surname) && !findField(profile.fields.pnr);
 			const text = pageText();
 			const shown = [ins?.item?.pnr, ins?.lastDone?.pnr].some((p) => !!p && pnrOnPage(text, p));
 			if (!(formGone && shown)) return false;
@@ -291,8 +311,8 @@
 			}
 			return;
 		}
-		const surnameEl = find(profile.fields.surname.selector);
-		const pnrEl = find(profile.fields.pnr.selector);
+		const surnameEl = findField(profile.fields.surname);
+		const pnrEl = findField(profile.fields.pnr);
 		if (surnameEl && pnrEl) {
 			stuckSince = 0;
 			if (!filledFor || filledFor.pnr !== item.pnr || filledFor.surnameEl !== surnameEl || filledFor.pnrEl !== pnrEl || pnrEl.value !== item.pnr) fill(item, surnameEl, pnrEl);
@@ -383,14 +403,28 @@
 	function disabled(button) {
 		return button.disabled || button.getAttribute("aria-disabled") === "true";
 	}
-	/** The Continue/submit button of the form that holds the PNR field. */
+	var BUTTON_SEARCH_LEVELS = 6;
+	/**
+	* The Continue/submit button of the form that holds the PNR field. Sites without a <form>
+	* element (e.g. Saudia's Angular manage-booking box): the nearest enclosing block that has an
+	* explicit submit button or one labelled auto_submit.button_text. Never just any button there.
+	*/
 	function continueButton(pnrEl) {
-		const form = pnrEl.closest("form");
-		if (!form) return null;
-		const buttons = Array.from(form.querySelectorAll("button, input[type=submit]")).filter(rendered);
 		const text = ins?.profile?.auto_submit?.button_text?.trim().toLowerCase();
 		const label = (b) => (b.value || b.innerText || "").trim().toLowerCase();
-		return buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? (text ? buttons.find((b) => label(b) === text) : void 0) ?? null;
+		const buttonsIn = (root) => Array.from(root.querySelectorAll("button, input[type=submit]")).filter(rendered);
+		const form = pnrEl.closest("form");
+		if (form) {
+			const buttons = buttonsIn(form);
+			return buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? (text ? buttons.find((b) => label(b) === text) : void 0) ?? null;
+		}
+		let root = pnrEl.parentElement;
+		for (let level = 0; root && level < BUTTON_SEARCH_LEVELS; level++, root = root.parentElement) {
+			const buttons = buttonsIn(root);
+			const hit = (text ? buttons.find((b) => label(b) === text) : void 0) ?? buttons.find((b) => b.getAttribute("type") === "submit");
+			if (hit) return hit;
+		}
+		return null;
 	}
 	function autoReady(item, surnameEl, pnrEl) {
 		return !!ins?.running && ins.autoSubmit && !ins.paused && !ins.blocked && !ins.searched && ins.item?.pnr === item.pnr && !item.recapture && filledFor?.pnr === item.pnr && pnrEl.value === item.pnr && rendered(surnameEl) && rendered(pnrEl);

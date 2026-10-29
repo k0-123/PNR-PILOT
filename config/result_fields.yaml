@@ -1,4 +1,4 @@
-# Fields Gemini extracts from the booking result page (Malaysia Airlines manage booking).
+# Fields Gemini extracts from the booking result page (any airline: Malaysia Airlines, Saudia...).
 # The Gemini result schema/prompt and the final Excel columns are generated from this list.
 # key: lowercase snake_case (used in JSON); label: Excel column header.
 # scope: passenger = differs per person on the booking (goes to that person's row);
@@ -12,11 +12,11 @@ fields:
     scope: passenger
   - key: e_ticket_number
     label: "E-Ticket Number"
-    description: "E-ticket number(s), usually 13 digits starting with 232 for Malaysia Airlines"
+    description: "E-ticket number(s), 13 digits starting with the airline's ticket code (232 Malaysia Airlines, 065 Saudia). Not the booking reference and not the 'Numeric booking reference'"
     scope: passenger
   - key: frequent_flyer_program
     label: "Frequent Flyer Program"
-    description: "Frequent flyer programme name and membership number, e.g. Enrich MH123456789"
+    description: "Frequent flyer programme name and membership number, e.g. Enrich MH123456789 or ALFURSAN 123456789. Empty if the page only offers 'Add frequent flyer number'"
     scope: passenger
   - key: primary_contact
     label: "Primary Contact Details"
@@ -32,7 +32,7 @@ fields:
     description: "Each flight: flight number, date, departure-arrival airports and times, cabin. Include any change/reschedule shown, e.g. a new time or 'Schedule changed', 'Rescheduled', 'Time changed'"
   - key: operating_flight
     label: "Operated By"
-    description: "The operating carrier and flight when the page says 'Operated by', e.g. 'MH 144', 'MH 108'. List each operating flight; leave empty if not shown"
+    description: "The operating carrier and flight when the page says 'Operated by', e.g. 'MH 144', 'SV 312'. List each operating flight; leave empty if not shown"
   - key: booking_status
     label: "Booking Status"
     description: "Booking/ticket status shown, e.g. Confirmed. Note any flight-change/reschedule alert if the page shows one"

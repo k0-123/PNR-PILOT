@@ -14,6 +14,7 @@
   ],
   "host_permissions": [
     "https://*.malaysiaairlines.com/*",
+    "https://*.saudia.com/*",
     "http://127.0.0.1/*",
     "http://localhost/*"
   ],

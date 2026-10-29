@@ -1,0 +1,62 @@
+# Site profile for the browser extension: Saudia (SV) "Manage booking" (live site).
+# 2026-10-29: built from screenshots ("image copy 31-34.png"), not from the page's HTML: saudia.com
+# sits behind Imperva bot protection, so the form could not be inspected outside a real browser.
+#   - Search form: www.saudia.com/<locale>/book-and-manage/manage/manage-booking, "Booking reference"
+#     radio pre-selected, two boxes: "Booking reference or E-ticket number" and "Last name".
+#   - Result: www.saudia.com/<locale>/managemybooking ("Multi-city Trip", Booking reference 9QJ7SK,
+#     Numeric booking reference, Booked on, Booking status, Upcoming flights, Passengers & Extras).
+# If the extension says "waiting for the result or the search form…" on the form, the selectors below
+# don't match: open DevTools on the form, copy the inputs' real attributes and put them first here.
+# The dashboard/API can override this file (saved in the database).
+name: "Saudia"
+search_url: "https://www.saudia.com/en-IN/book-and-manage/manage/manage-booking"
+match_urls: ["https://*.saudia.com/*"]
+fields:
+  # Selectors by attribute first; when none matches, the extension takes the input whose
+  # placeholder / aria-label / <label> contains `label` (Saudia uses floating labels).
+  pnr:
+    selector: 'input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i], input[formcontrolname*="booking" i], input[name*="bookingRef" i], input[name*="pnr" i], input[id*="pnr" i]'
+    label: "Booking reference"
+  surname:
+    selector: 'input[placeholder*="Last name" i], input[aria-label*="Last name" i], input[formcontrolname*="lastName" i], input[name*="lastName" i], input[name*="surname" i]'
+    label: "Last name"
+focus_after_fill: surname          # Last name is the second box: press Enter there
+auto_submit:
+  # Saudia is protected by Imperva ("Pardon Our Interruption"), stricter than MH: slower, wider
+  # jitter. Auto-continue switches itself off at the first block page.
+  allowed: true
+  min_gap_ms: 10000
+  max_gap_ms: 18000
+  button_text: "Search"            # fallback; a type=submit button near the fields is used first
+result_detect:
+  # The search form is .../manage/manage-booking (with a hyphen); the result is .../managemybooking.
+  url_contains: "/managemybooking"
+not_found_detect:
+  selector: null
+  # Saudia's exact wording is not known yet: add it here after the first not-found booking.
+  text_contains:
+    - "booking cannot be found"
+    - "booking could not be found"
+    - "could not find your booking"
+    - "couldn't find your booking"
+    - "unable to find"
+    - "unable to retrieve"
+    - "no booking found"
+    - "booking not found"
+    - "not eligible for retrieval"
+block_detect:
+  selector: null
+  text_contains:
+    - "pardon our interruption"      # Imperva interstitial
+    - "captcha"
+    - "verify you are human"
+    - "access denied"
+    - "unusual traffic"
+    - "are you a robot"
+    - "request blocked"
+capture:
+  container_selector: "body"       # read the whole page, incl. collapsed passengers (hidden text)
+  screenshot: fallback
+settle_ms: 3500                    # the result page fills in flights and passengers in steps
+row_timeout_ms: 60000
+pnr_check: true                    # the result page shows "Booking reference 9QJ7SK"

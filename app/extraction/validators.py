@@ -5,9 +5,12 @@ import re
 
 from app.core.models import ExtractedRow, ExtractionStatus, GeminiRow
 
-PNR_RE = re.compile(r"^[A-Z0-9]{6}$")
+# The lookup key: a 6-character PNR, or a 13-digit e-ticket number (airlines such as Saudia
+# retrieve a booking by ticket, and some GDS passenger lists show tickets instead of PNRs).
+PNR_RE = re.compile(r"^(?:[A-Z0-9]{6}|\d{13})$")
+TICKET_RE = re.compile(r"^\d{13}$")
 SURNAME_RE = re.compile(r"^[A-Z][A-Z \-']*$")
-LINE_NO_RE = re.compile(r"^\d{3}$")
+LINE_NO_RE = re.compile(r"^\d{1,3}$")
 CLASS_RE = re.compile(r"^[A-Z]$")
 STATUS_RE = re.compile(r"^[A-Z]{2}$")
 DATE_RE = re.compile(r"^\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$")
@@ -60,10 +63,12 @@ def validate_row(raw: GeminiRow, threshold: float) -> ExtractedRow:
     elif not SURNAME_RE.match(surname):
         issues.append("surname has invalid characters")
 
+    if pnr is not None:
+        pnr = pnr.replace(" ", "").replace("-", "") if re.fullmatch(r"[\d \-]+", pnr) else pnr
     if pnr is None:
         issues.append("PNR missing")
     elif not PNR_RE.match(pnr):
-        issues.append("PNR must be exactly 6 letters/digits")
+        issues.append("PNR must be 6 letters/digits, or a 13-digit e-ticket number")
 
     pax = raw.pax_count
     if pax is not None and not 1 <= pax <= 99:
@@ -95,12 +100,19 @@ def validate_row(raw: GeminiRow, threshold: float) -> ExtractedRow:
 def validate_edit(surname: str | None, pnr: str | None) -> tuple[str | None, str | None, list[str]]:
     """Re-validate reviewer input. Returns (normalised surname, normalised PNR, errors)."""
     surname, pnr = normalise(surname), normalise(pnr)
+    if pnr and re.fullmatch(r"[\d \-]+", pnr):
+        pnr = pnr.replace(" ", "").replace("-", "")  # e-ticket typed as "065-4859768977"
     errors = []
     if not surname or not SURNAME_RE.match(surname):
         errors.append("Surname must start with a letter and contain only letters, spaces, - or '")
     if not pnr or not PNR_RE.match(pnr):
-        errors.append("PNR must be exactly 6 letters/digits (A-Z, 0-9)")
+        errors.append("PNR must be 6 letters/digits (A-Z, 0-9), or a 13-digit e-ticket number")
     return surname, pnr, errors
+
+
+def is_ticket(key: str | None) -> bool:
+    """True when the lookup key is an e-ticket number rather than a PNR."""
+    return bool(key) and bool(TICKET_RE.match(key))
 
 
 def normalise_notes(notes: str | None) -> str | None:

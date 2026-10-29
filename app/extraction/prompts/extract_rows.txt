@@ -1,7 +1,9 @@
 This is a photo of a computer monitor showing an airline GDS passenger list.
 The photo may be slanted, have glare, or show a mouse cursor over the text.
 
-Transcribe EVERY passenger row, top to bottom. Passenger rows look like:
+Transcribe EVERY passenger row, top to bottom. The screen uses one of two layouts.
+
+FIRST LAYOUT - GDS list with PNRs. Passenger rows look like:
 
   086  02SHUKLA/SIDDHESHVA  BOGZGQ U  HK 14FEB SWI1G
   089  01AKULA/MALINI MS    8SQLQK E  HK 06SEP DSMEY08WC
@@ -19,6 +21,25 @@ Fields, left to right:
 - status: the 2-letter status ("HK").
 - date: the date exactly as shown, DDMMM ("14FEB").
 - office_id: the last token on the row ("SWI1G", "DSMEY08WC").
+
+SECOND LAYOUT - passenger list with e-ticket numbers (no PNR column), e.g.:
+
+  6  ABOUHARB Ahmed Mr       KUL  JED  Y  Q        0654859768977 AS N
+  15 AHMAD KAMAL Nor Adylia Ms KUL JED  J  J  4L    0652202068432 AS N
+
+Columns: line number, name, from, to, cabin, booking class, (seat), e-ticket number, then
+status letters ("AS N"). For this layout:
+- line_no: the number as shown ("6", "15").
+- pax_count: null.
+- surname: the UPPERCASE word(s) at the start of the name ("ABOUHARB", "AHMAD KAMAL").
+- first_name: the following mixed-case word(s), without the title ("Ahmed", "Nor Adylia").
+- title: the last word if it is Mr, Ms, Mrs, Miss, Mstr. "Child" / "Infant" are not titles:
+  leave them out of every field and write e.g. "infant" in notes.
+  A name cut off with "..." or initials only ("GAN. A. ..."): copy what is shown and say so in notes.
+- pnr: the 13-digit e-ticket number, digits only, without spaces or the "AS N" after it
+  ("0654859768977"). It must be exactly 13 digits; if any digit is unreadable return null.
+- class_code: the booking class (the second single letter, "Q", "J"); status, date, office_id: null.
+- pnr_confidence: confidence that EVERY one of the 13 digits is correct (watch 3/8, 5/6, 0/8, 1/7).
 
 Rules:
 1. Extract only what is visible. NEVER guess or invent characters, and never "correct" a name.

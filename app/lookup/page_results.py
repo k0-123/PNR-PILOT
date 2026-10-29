@@ -9,6 +9,9 @@ matching as GDS PNR screens (`gds_screens`), so both routes fill the final Excel
 - booking-wide values (contact, from/to, flights, status) go to every row with that PNR, also
   rows whose passenger isn't listed on the page;
 - a page that shows another booking reference -> MISMATCH (nothing stored);
+- searched by e-ticket number (e.g. Saudia): the page shows the booking reference, not the
+  ticket, so the booking is accepted when a passenger's ticket is the searched one or, failing
+  that, when the row's surname is on it; only that row is filled;
 - nothing readable / Gemini failure -> PARSE_ERROR. The page text is kept, so "Retry failed"
   reads it again without a new website search.
 
@@ -28,9 +31,9 @@ from app.core.logging_setup import mask
 from app.core.models import JobStatus, LookupStatus
 from app.core.storage import LocalStorage, StorageError
 from app.extraction.gemini_client import CallRecord, GeminiClient, GeminiError, GeminiResult
-from app.extraction.validators import normalise
+from app.extraction.validators import is_ticket, normalise
 
-from .gds_screens import apply_booking, build_prompt, build_screen_model, eligible_rows_by_pnr
+from .gds_screens import apply_booking, build_prompt, build_screen_model, eligible_rows_by_pnr, match_passenger
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ MIN_TEXT_CHARS = 40
 
 PAGE_CONTEXT = """
 The document is the visible text of an airline "manage booking" web page, captured right after
-searching booking reference "{pnr}" for last name "{surname}".
+searching {key_kind} "{pnr}" for last name "{surname}".
 Passengers we expect on this booking: {passengers}.
 Return the booking shown on the page, with its booking reference exactly as the page shows it
 (even if it is not {pnr}). If the page shows no booking at all, return {{"bookings": []}}.
@@ -113,7 +116,8 @@ def call(client: GeminiClient | None, settings: Settings, fields: ResultFieldsCo
     if client is None:
         return GeminiError("no Gemini client available"), records
     prompt = build_prompt(fields) + PAGE_CONTEXT.format(
-        pnr=cap.pnr, surname=cap.surname or "?", passengers=", ".join(cap.passengers) or "unknown")
+        pnr=cap.pnr, surname=cap.surname or "?", passengers=", ".join(cap.passengers) or "unknown",
+        key_kind="e-ticket number" if is_ticket(cap.pnr) else "booking reference")
     try:
         res = client.generate_json(
             [prompt, "PAGE TEXT:\n" + cap.text],
@@ -167,7 +171,17 @@ def apply(db: Database, settings: Settings, fields: ResultFieldsConfig, cap: Cap
         return fail(LookupStatus.PARSE_ERROR, f"could not read the page: {outcome}")
 
     bookings = outcome.data.bookings
-    booking = next((b for b in bookings if (normalise(b.pnr) or "").replace(" ", "") == cap.pnr), None)
+    rows = [r for r in eligible_rows_by_pnr(db, cap.job_id).get(cap.pnr, [])
+            if r["lookup_status"] == LookupStatus.CAPTURED]
+    ticket = is_ticket(cap.pnr)
+    if ticket:
+        booking = _booking_for_ticket(bookings, cap.pnr, rows)
+        if booking is None and bookings:
+            shown = ", ".join(sorted({(normalise(b.pnr) or "?") for b in bookings}))
+            return fail(LookupStatus.MISMATCH,
+                        f"the page showed booking {shown}, without ticket {cap.pnr} or passenger {cap.surname or '?'}")
+    else:
+        booking = next((b for b in bookings if (normalise(b.pnr) or "").replace(" ", "") == cap.pnr), None)
     if booking is None:
         if bookings:
             shown = ", ".join(sorted({(normalise(b.pnr) or "?") for b in bookings}))
@@ -179,17 +193,47 @@ def apply(db: Database, settings: Settings, fields: ResultFieldsConfig, cap: Cap
     for pax in booking.passengers:
         if getattr(pax, "full_name", None):
             pax.full_name = split_glued_title(pax.full_name)
-    candidates = [r for r in eligible_rows_by_pnr(db, cap.job_id).get(cap.pnr, [])
-                  if r["lookup_status"] == LookupStatus.CAPTURED]
+    if ticket:
+        # The other passengers on the booking have their own tickets (own rows, own searches).
+        booking.passengers = _ticket_passengers(booking.passengers, cap.pnr, rows)
     filled, unmatched = apply_booking(
-        db, booking, candidates, threshold=settings.confidence_threshold,
+        db, booking, rows, threshold=settings.confidence_threshold,
         page_text_path=cap.page_text_path, booking_keys=fields.booking_keys)
-    note = f"passengers on the page not in the photo: {', '.join(unmatched)}" if unmatched else None
+    note = f"passengers on the page not in the photo: {', '.join(unmatched)}" if unmatched and not ticket else None
     with db.tx() as c:
         _finish(c, cap.job_id, cap.pnr, LookupStatus.PARSED, note)
     log.info("Captured page read", extra={**ctx, "rows_filled": filled, "unmatched": len(unmatched),
                                           "cost_usd": round(outcome.cost_usd, 6)})
     return LookupStatus.PARSED.value
+
+
+def _digits(value) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def _has_ticket(pax, ticket: str) -> bool:
+    """Any ticket field of the passenger (result_fields.yaml: e_ticket_number) holds the ticket."""
+    return any(ticket in _digits(v) for k, v in pax.model_dump().items() if "ticket" in k)
+
+
+def _booking_for_ticket(bookings: list, ticket: str, rows: list):
+    """The booking a ticket search opened: the one listing that ticket, else (the page often shows
+    only the booking reference) the one with the row's passenger on it. None = another booking."""
+    for b in bookings:
+        if any(_has_ticket(p, ticket) for p in b.passengers):
+            return b
+    for b in bookings:
+        if any(match_passenger(rows, p.surname, p.first_name) for p in b.passengers):
+            return b
+    return None
+
+
+def _ticket_passengers(passengers: list, ticket: str, rows: list) -> list:
+    """Of a booking found by ticket, only the passenger that ticket belongs to."""
+    by_ticket = [p for p in passengers if _has_ticket(p, ticket)]
+    if by_ticket:
+        return by_ticket[:1]
+    return [p for p in passengers if match_passenger(rows, p.surname, p.first_name)][:1]
 
 
 # ------------------------------------------------------------- completion

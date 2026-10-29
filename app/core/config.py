@@ -120,6 +120,10 @@ class ResultFieldsConfig(BaseModel):
 
 class Selector(BaseModel):
     selector: str
+    # Fallback when the selector matches nothing: the input whose placeholder, aria-label or
+    # <label> contains this text (case-insensitive), e.g. "Last name". For sites whose input
+    # names/ids are unknown or change between releases.
+    label: str | None = None
 
 
 class ProfileFields(BaseModel):

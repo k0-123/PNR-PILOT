@@ -6,7 +6,7 @@ import time
 import pytest
 
 from app.core.config import (
-    CONFIG_DIR, ResultFieldsConfig, Settings, load_result_fields,
+    CONFIG_DIR, ResultFieldsConfig, Settings, list_site_profiles, load_result_fields, load_site_profile,
 )
 from app.core.db import MIGRATIONS, Database
 from app.core.logging_setup import JsonFormatter, RedactSecretsFilter, mask
@@ -135,6 +135,18 @@ def test_shipped_configs_load():
                                               "primary_contact", "origin", "destination",
                                               "flight_details", "operating_flight", "booking_status"]
     assert not (CONFIG_DIR / "website.yaml").exists()  # no automated website lookups
+
+
+def test_saudia_profile_loads():
+    profiles = list_site_profiles()
+    assert {"malaysia_airlines", "saudia"} <= profiles.keys()
+    sv = load_site_profile(profiles["saudia"])
+    assert not sv.is_placeholder
+    assert sv.fields.pnr.label == "Booking reference" and sv.fields.surname.label == "Last name"
+    # the result URL must not also match the search form's URL (.../manage/manage-booking)
+    assert sv.result_detect.url_contains not in sv.search_url
+    assert "pardon our interruption" in sv.block_detect.text_contains
+    assert sv.auto_submit.min_gap_ms >= 10_000
 
 
 def test_default_models_are_flash_without_thinking():

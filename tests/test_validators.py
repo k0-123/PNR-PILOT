@@ -23,12 +23,13 @@ def test_normalises_case_and_spaces():
     assert r.extraction_status == READY
 
 
-@pytest.mark.parametrize("pnr", ["BOGZGQ", "8SQLQK", "9P4BIE", "123456"])
+@pytest.mark.parametrize("pnr", ["BOGZGQ", "8SQLQK", "9P4BIE", "123456", "0654859768977"])
 def test_good_pnrs(pnr):
     assert v(pnr=pnr).extraction_status == READY
 
 
-@pytest.mark.parametrize("pnr", ["BOGZG", "BOGZGQ1", "BOG-GQ", "BOGZ Q", "BÖGZGQ", None, ""])
+@pytest.mark.parametrize("pnr", ["BOGZG", "BOGZGQ1", "BOG-GQ", "BOGZ Q", "BÖGZGQ", None, "",
+                                 "065485976897", "06548597689771", "065485976897O"])
 def test_bad_pnrs_need_review(pnr):
     r = v(pnr=pnr)
     assert r.extraction_status == REVIEW
@@ -95,7 +96,7 @@ def test_cut_off_name_is_not_a_title():
 
 
 def test_format_warnings_do_not_block():
-    r = v(office_id="X", date="14FEBR", line_no="86", class_code="UU", status="H")
+    r = v(office_id="X", date="14FEBR", line_no="0086", class_code="UU", status="H")
     assert r.extraction_status == READY
     assert len(r.warnings) == 5
 
@@ -103,3 +104,9 @@ def test_format_warnings_do_not_block():
 def test_notes_combine_issues_and_ai_notes():
     r = v(pnr=None, notes="PNR hidden by cursor")
     assert "PNR missing" in r.notes_text and "PNR hidden by cursor" in r.notes_text
+
+
+def test_e_ticket_number_as_lookup_key():
+    r = v(pnr="065 4859768977")  # spaces / dashes inside a ticket number are dropped
+    assert (r.pnr, r.extraction_status) == ("0654859768977", READY)
+    assert v(line_no="6").warnings == []  # e-ticket lists number rows without leading zeros

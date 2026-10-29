@@ -37,7 +37,7 @@ class Pages:
         self.seen: list[str] = []
 
     def __call__(self, contents):
-        pnr = re.search(r'searching booking reference "([A-Z0-9]+)"', contents[0]).group(1)
+        pnr = re.search(r'searching (?:booking reference|e-ticket number) "([A-Z0-9]+)"', contents[0]).group(1)
         self.seen.append(pnr)
         answer = self.answers[pnr]
         if isinstance(answer, list):  # a sequence of answers for repeated reads
@@ -127,6 +127,37 @@ def test_page_for_another_booking_is_a_mismatch(settings, db, storage):
     worker.run_once()
     ((_, _, st, values, note),) = results(db, job)
     assert (st, values) == (LS.MISMATCH, None) and "ZZZ999" in note
+
+
+T1, T2, T3 = "0654859768977", "0654859768978", "0652201801815"
+
+
+def test_ticket_search_fills_only_that_passenger(settings, db, storage):
+    # Saudia: searched by e-ticket; the page shows booking 9QJ7SK with both passengers.
+    job, _ = captured_job(db, storage, settings, [("ABOUHARB", T1), ("ELATTAFI", T2)])
+    both = booking("9QJ7SK", pax("ABOUHARB", "AHMED", ticket_numbers=T1), pax("ELATTAFI", "YOUSRA", ticket_numbers=T2))
+    worker, pages = worker_for(settings, {T1: both, T2: both})
+    worker.run_once()
+    got = results(db, job)
+    assert [(s, st, v["ticket_numbers"], note) for s, _, st, v, note in got] == [
+        ("ABOUHARB", LS.PARSED, T1, None), ("ELATTAFI", LS.PARSED, T2, None)]
+    assert lookup(db, job, T1)["status"] == LS.PARSED
+
+
+def test_ticket_search_without_ticket_on_page_matches_by_surname(settings, db, storage):
+    job, _ = captured_job(db, storage, settings, [("ABOUHARB", T1)])
+    worker, _ = worker_for(settings, {T1: booking("9QJ7SK", pax("ELATTAFI", "YOUSRA"), pax("ABOUHARB", "AHMED"))})
+    worker.run_once()
+    ((s, _, st, v, _),) = results(db, job)
+    assert (s, st, v["passenger_names"]) == ("ABOUHARB", LS.PARSED, "AHMED ABOUHARB")
+
+
+def test_ticket_search_on_another_booking_is_a_mismatch(settings, db, storage):
+    job, _ = captured_job(db, storage, settings, [("ABBAS", T3)])
+    worker, _ = worker_for(settings, {T3: booking("9QJ7SK", pax("ABOUHARB", "AHMED", ticket_numbers=T1))})
+    worker.run_once()
+    ((_, _, st, values, note),) = results(db, job)
+    assert (st, values) == (LS.MISMATCH, None) and "9QJ7SK" in note and T3 in note
 
 
 def test_unreadable_page_is_read_again_on_retry_without_a_new_search(settings, db, storage):
