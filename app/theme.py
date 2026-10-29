@@ -196,5 +196,20 @@ section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) { 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
 }
+/* New job: bigger field labels and the airline as large cards instead of a dropdown */
+.st-key-new_job_box [data-testid="stWidgetLabel"] p { font-size: 1.12rem; font-weight: 600; color: var(--ink); }
+.st-key-new_job_box [role="radiogroup"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .9rem; }
+.st-key-new_job_box [role="radiogroup"] > label {
+  margin: 0; padding: 1.05rem 1.2rem; border-radius: 16px; background: #fff;
+  border: 1.5px solid #dcdcda; box-shadow: 0 1px 2px rgba(0,0,0,.04); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .15s; }
+.st-key-new_job_box [role="radiogroup"] > label:hover { border-color: var(--accent); transform: translateY(-1px); }
+.st-key-new_job_box [role="radiogroup"] > label:has(input:checked) {
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(173,49,77,.15); background: #fff7f9; }
+.st-key-new_job_box [role="radiogroup"] > label p { font-size: 1.15rem; font-weight: 600; color: var(--ink); }
+.st-key-new_job_box [role="radiogroup"] > label small, .st-key-new_job_box .airline-sub { font-size: .9rem; color: var(--copy); }
+.st-key-new_job_box [data-testid="stFileUploaderDropzone"] { padding: 1.6rem; border-radius: 16px; }
+.st-key-new_job_box input[type="text"] { font-size: 1.05rem; }
+.st-key-new_job_box button[kind="primaryFormSubmit"] p { font-size: 1.08rem; }
 </style>
 """.replace("GRAIN", _GRAIN)

@@ -377,13 +377,15 @@ def page_new_job() -> None:
           "review, and keeps going if you close this tab.")
 
     airlines = lookups.airline_choices(db)
-    with st.form("new_job", clear_on_submit=True):
-        airline = st.selectbox("Airline", list(airlines), format_func=airlines.get, index=None,
-                               placeholder="Choose the airline of this sheet",
-                               help="The extension opens this airline's website for the job's bookings.")
-        files = st.file_uploader(f"GDS photos (PNG, JPG, JPEG, WEBP · max {settings.max_file_size_mb:g} MB each)",
+    # What each airline's sheet is searched by, shown under its name on the card.
+    keys = {"saudia": "Searched by e-ticket number + last name"}
+    with st.container(key="new_job_box"), st.form("new_job", clear_on_submit=True):
+        airline = st.radio("1 · Airline", list(airlines), index=None,
+                           format_func=lambda a: f"{airlines[a]}  \n:small[{keys.get(a, 'Searched by PNR + last name')}]",
+                           help="The extension opens this airline's website for the job's bookings.")
+        files = st.file_uploader(f"2 · GDS photos (PNG, JPG, JPEG, WEBP · max {settings.max_file_size_mb:g} MB each)",
                                  type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
-        name = st.text_input("Job name (optional)")
+        name = st.text_input("3 · Job name (optional)")
         submitted = st.form_submit_button("Create job", type="primary")
     st.caption(f"After you create the job, the worker reads the images, {settings.gemini_concurrency} at a time. "
                "You can close this tab; the job keeps running.")
