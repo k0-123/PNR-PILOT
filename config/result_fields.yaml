@@ -6,6 +6,9 @@
 # Several passengers/tickets on one booking are joined with ", ".
 
 fields:
+  - key: booking_reference
+    label: "Booking Reference"
+    description: "The 6-character booking reference / PNR shown on the page, e.g. 7PZ5FA. Not the 'Numeric booking reference' and not an e-ticket number"
   - key: full_name
     label: "Full Name"
     description: "Full passenger name(s) with title exactly as shown on the booking, e.g. MS LIJING CHEN"

@@ -158,11 +158,21 @@
 		el.dispatchEvent(new FocusEvent("blur"));
 		el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
 	}
+	/** Some forms (Saudia) only show their Continue button once a box has had focus, as when staff
+	* click or Tab into it. Focus each box the way a person would before filling it. */
+	function touch(el) {
+		el.focus();
+		el.dispatchEvent(new FocusEvent("focus"));
+		el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+	}
 	function fill(item, surnameEl, pnrEl) {
+		touch(pnrEl);
+		touch(surnameEl);
 		setValue(surnameEl, item.surname ?? "");
+		touch(pnrEl);
 		setValue(pnrEl, item.pnr);
 		const target = ins?.profile?.focus_after_fill === "surname" ? surnameEl : pnrEl;
-		target.focus();
+		touch(target);
 		try {
 			target.setSelectionRange(target.value.length, target.value.length);
 		} catch {}

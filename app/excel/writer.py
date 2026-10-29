@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.extraction.validators import is_ticket
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -35,6 +36,7 @@ EXTRACTED_COLUMNS: list[tuple[str, str]] = [
     ("First Name", "first_name"),
     ("Title", "title"),
     ("PNR", "pnr"),
+    ("E-Ticket Number", "pnr"),  # rows searched by e-ticket (e.g. Saudia): the ticket goes here, not under PNR
     ("Class", "class_code"),
     ("Status", "status"),
     ("Date", "date"),
@@ -115,8 +117,11 @@ def extracted_table(db_rows) -> tuple[list[str], list[list]]:
     rows = []
     for r in db_rows:
         vals = []
-        for _, key in EXTRACTED_COLUMNS:
+        ticket = is_ticket(r["pnr"])
+        for header, key in EXTRACTED_COLUMNS:
             v = r[key]
+            if key == "pnr":
+                v = v if (header == "E-Ticket Number") == ticket else None
             if key.endswith("_confidence") and v is not None:
                 v = round(float(v), 2)
             vals.append(v)
@@ -138,10 +143,11 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
     values), edited values, attempts/time, who looked it up and the source. The found values sit
     right after the PNR so they are on screen when the file opens."""
     base_headers, base_rows = extracted_table(db_rows)
-    split = base_headers.index("PNR") + 1
+    # The searched e-ticket (Excel #1's own column) shows in the result's "E-Ticket Number" column.
+    split = base_headers.index("E-Ticket Number")
     headers = [*base_headers[:split],
                *[f.label for f in result_fields.fields], "Lookup Status", "Error",
-               *base_headers[split:], "Edited Surname", "Edited PNR",
+               *base_headers[split + 1:], "Edited Surname", "Edited PNR",
                "Attempts", "Looked Up At", "Looked Up By", "Source"]
     rows = []
     for r, base in zip(db_rows, base_rows):
@@ -150,11 +156,16 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
         except (TypeError, ValueError):
             data = {}
         eligible = r["extraction_status"] in ("READY", "APPROVED")
+        if is_ticket(r["pnr"]):
+            # Searched by e-ticket: the PNR is the booking reference the website showed.
+            base = [*base[:split - 1], data.get("booking_reference"), *base[split:]]
+            if not data.get("e_ticket_number"):
+                data["e_ticket_number"] = r["pnr"]
         rows.append([
             *base[:split],
             *[data.get(f.key) for f in result_fields.fields],
             r["lookup_status"] if eligible else None, r["error_message"],
-            *base[split:], r["edited_surname"], r["edited_pnr"],
+            *base[split + 1:], r["edited_surname"], r["edited_pnr"],
             r["attempts"] or None, r["lookup_finished_at"],
             _get(r, "looked_up_by"), _source(r) if eligible else None,
         ])

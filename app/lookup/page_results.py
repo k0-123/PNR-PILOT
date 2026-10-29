@@ -193,6 +193,10 @@ def apply(db: Database, settings: Settings, fields: ResultFieldsConfig, cap: Cap
     for pax in booking.passengers:
         if getattr(pax, "full_name", None):
             pax.full_name = split_glued_title(pax.full_name)
+    ref = (normalise(booking.pnr) or "").replace(" ", "")
+    for pax in booking.passengers:  # the reference read for the booking wins over a per-passenger guess
+        if ref and hasattr(pax, "booking_reference"):
+            pax.booking_reference = ref
     if ticket:
         # The other passengers on the booking have their own tickets (own rows, own searches).
         booking.passengers = _ticket_passengers(booking.passengers, cap.pnr, rows)
