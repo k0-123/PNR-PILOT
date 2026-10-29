@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GDS PNR Lookup",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Fills Surname + PNR on the airline's Manage Booking page. You press Enter; it captures the result and fills the next one.",
   "minimum_chrome_version": "120",
   "permissions": [
