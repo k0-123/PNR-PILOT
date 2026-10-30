@@ -14,20 +14,26 @@ match_urls: ["https://*.saudia.com/*"]
 fields:
   # Selectors by attribute first; when none matches, the extension takes the input whose
   # placeholder / aria-label / <label> contains `label` (Saudia uses floating labels).
+  # 2026-10-30 (image copy 41-42.png): once a 13-digit ticket is typed, Saudia renames the box from
+  # "Booking reference or E-ticket number" to "E-Ticket / EMD". "E-Ticket" is in both labels.
   pnr:
-    selector: 'input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i], input[formcontrolname*="booking" i], input[name*="bookingRef" i], input[name*="pnr" i], input[id*="pnr" i]'
-    label: "Booking reference"
+    selector: 'input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i], input[formcontrolname*="booking" i], input[formcontrolname*="ticket" i], input[name*="bookingRef" i], input[name*="pnr" i], input[id*="pnr" i]'
+    label: "E-Ticket"
   surname:
     selector: 'input[placeholder*="Last name" i], input[aria-label*="Last name" i], input[formcontrolname*="lastName" i], input[name*="lastName" i], input[name*="surname" i]'
     label: "Last name"
 focus_after_fill: surname          # Last name is the second box: press Enter there
+# The Continue button lives in a popup that opens only when a box is clicked (image copy 42.png).
+# When Auto-continue finds no Continue button, the extension clicks the ticket box (never a search).
+open_form:
+  selector: 'input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i]'
 auto_submit:
   # Saudia is protected by Imperva ("Pardon Our Interruption"), stricter than MH: slower, wider
   # jitter. Auto-continue switches itself off at the first block page.
   allowed: true
   min_gap_ms: 10000
   max_gap_ms: 18000
-  button_text: "Search"            # fallback; a type=submit button near the fields is used first
+  button_text: "Continue"          # the popup's green Continue button (image copy 42.png)
 result_detect:
   # The search form is .../manage/manage-booking (with a hyphen); the result is .../managemybooking.
   url_contains: "/managemybooking"

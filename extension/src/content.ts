@@ -114,13 +114,24 @@ function labelOf(el: HTMLInputElement): string {
   return parts.join(" ").replace(/\s+/g, " ").toLowerCase();
 }
 
-/** A search-form input: the profile's selector, else the input whose label contains spec.label. */
+/**
+ * A search-form input: the profile's selector, else the input whose label contains spec.label.
+ * Of several on screen the last one wins: a popup copy of the form (Saudia's Continue popup) is
+ * added after the page's own form and covers it.
+ */
 function findField(spec: FieldSpec): HTMLInputElement | null {
-  const bySelector = find(spec.selector) as HTMLInputElement | null;
+  const pick = (all: HTMLInputElement[]) => all.filter(rendered).pop() ?? all[0] ?? null;
+  if (isSelectorSet(spec.selector)) {
+    try {
+      const hit = pick(Array.from(document.querySelectorAll<HTMLInputElement>(spec.selector)));
+      if (hit) return hit;
+    } catch {
+      // invalid selector in the profile: try the label
+    }
+  }
   const label = spec.label?.trim().toLowerCase();
-  if (bySelector || !label) return bySelector;
-  const all = Array.from(document.querySelectorAll<HTMLInputElement>(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label));
-  return all.find(rendered) ?? all[0] ?? null;
+  if (!label) return null;
+  return pick(Array.from(document.querySelectorAll<HTMLInputElement>(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label)));
 }
 
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "IFRAME"]);
@@ -408,8 +419,9 @@ function formOpener(pnrEl: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Show a search form that sits behind a tab. This only switches the visible tab: the form is
- * not sent and no search starts (the staff member's Enter does that). A few tries per page load.
+ * Show a search form that sits behind a tab, or (Saudia) open the popup that holds the Continue
+ * button by clicking the ticket box. This only shows the form: it is not sent and no search starts
+ * (the staff member's Enter or Auto-continue does that). A few tries per page load.
  */
 function openForm(pnrEl: HTMLElement): void {
   if (!ins?.running || ins.paused || openFormTries >= OPEN_FORM_TRIES) return;
@@ -450,7 +462,7 @@ function disabled(button: HTMLElement): boolean {
   return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
 }
 
-const BUTTON_SEARCH_LEVELS = 6; // how far up from the PNR field to look when there is no <form>
+const BUTTON_SEARCH_LEVELS = 10; // how far up from the PNR field to look when there is no <form>
 
 /**
  * The Continue/submit button of the form that holds the PNR field. Sites without a <form>
@@ -464,11 +476,17 @@ function continueButton(pnrEl: HTMLElement): HTMLElement | null {
     Array.from(root.querySelectorAll<HTMLElement>("button, input[type=submit]")).filter(rendered);
   const form = pnrEl.closest("form");
   if (form) {
+    // The labelled button first: Saudia's form also holds other untyped buttons (Angular Material),
+    // and an untyped <button> counts as a submit button.
     const buttons = buttonsIn(form);
-    return buttons.find((b) => b.getAttribute("type") === "submit" || (b.tagName === "BUTTON" && !b.getAttribute("type")))
-      ?? (text ? buttons.find((b) => label(b) === text) : undefined)
+    return (text ? buttons.find((b) => label(b) === text) : undefined)
+      ?? buttons.find((b) => b.getAttribute("type") === "submit" || (b.tagName === "BUTTON" && !b.getAttribute("type")))
       ?? null;
   }
+  // A popup (Saudia): its Continue sits in the popup's footer, further from the box than the levels below.
+  const dialog = text ? pnrEl.closest("[role=dialog], [aria-modal=true], dialog, .modal, .cdk-overlay-pane") : null;
+  const inDialog = dialog ? buttonsIn(dialog).find((b) => label(b) === text) : undefined;
+  if (inDialog) return inDialog;
   let root: Element | null = pnrEl.parentElement;
   for (let level = 0; root && level < BUTTON_SEARCH_LEVELS; level++, root = root.parentElement) {
     const buttons = buttonsIn(root);
@@ -489,7 +507,11 @@ function autoReady(item: Lease, surnameEl: HTMLInputElement, pnrEl: HTMLInputEle
 function scheduleContinue(item: Lease, surnameEl: HTMLInputElement, pnrEl: HTMLInputElement): string | null {
   if (!autoReady(item, surnameEl, pnrEl)) return null;
   const button = continueButton(pnrEl);
-  if (!button) return `Auto-continue: no Continue button found — press Enter · ${item.pnr}`;
+  if (!button) {
+    // Saudia shows Continue only in a popup that opens when a box is clicked: open it (profile's open_form).
+    openForm(pnrEl);
+    return `Auto-continue: no Continue button found — press Enter · ${item.pnr}`;
+  }
   if (disabled(button)) return `Auto-continue: waiting for the site to accept the fields · ${item.pnr}`;
   // Pick the (jittered) gap once per booking, then schedule against it. Re-computing it every tick
   // would both re-randomize the wait and make the countdown flicker.
