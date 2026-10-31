@@ -26,7 +26,7 @@ focus_after_fill: surname          # Last name is the second box: press Enter th
 # The Continue button lives in a popup that opens only when a box is clicked (image copy 42.png).
 # When Auto-continue finds no Continue button, the extension clicks the ticket box (never a search).
 open_form:
-  selector: 'input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i]'
+  selector: 'input[formcontrolname="lastName"], input[formcontrolname="eticketnum"], input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i]'
 auto_submit:
   # Saudia is protected by Imperva ("Pardon Our Interruption"), stricter than MH: slower, wider
   # jitter. Auto-continue switches itself off at the first block page.
