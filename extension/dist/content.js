@@ -473,7 +473,7 @@
 		return candidates.find((el) => {
 			if (!rendered(el)) return false;
 			if (el.closest("[type=submit]")) return false;
-			if (searchForm && searchForm.contains(el)) return false;
+			if (searchForm && searchForm.contains(el) && !el.matches("input:not([type=submit]):not([type=button]):not([type=image])")) return false;
 			const link = el.closest("a");
 			const href = link?.getAttribute("href");
 			if (link && href && !href.startsWith("#") && !href.toLowerCase().startsWith("javascript:void")) return false;

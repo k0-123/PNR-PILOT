@@ -505,7 +505,8 @@ function formOpener(pnrEl: HTMLElement): HTMLElement | null {
     if (!rendered(el)) return false;
     // Never anything that could send a form or leave the page.
     if (el.closest("[type=submit]")) return false;
-    if (searchForm && searchForm.contains(el)) return false;
+    // Inside the form only a text box may be clicked (Saudia opens its Continue popup that way).
+    if (searchForm && searchForm.contains(el) && !el.matches("input:not([type=submit]):not([type=button]):not([type=image])")) return false;
     const link = el.closest("a");
     const href = link?.getAttribute("href");
     if (link && href && !href.startsWith("#") && !href.toLowerCase().startsWith("javascript:void")) return false;
