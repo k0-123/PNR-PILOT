@@ -17,10 +17,10 @@ fields:
   # 2026-10-30 (image copy 41-42.png): once a 13-digit ticket is typed, Saudia renames the box from
   # "Booking reference or E-ticket number" to "E-Ticket / EMD". "E-Ticket" is in both labels.
   pnr:
-    selector: 'input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i], input[formcontrolname*="booking" i], input[formcontrolname*="ticket" i], input[name*="bookingRef" i], input[name*="pnr" i], input[id*="pnr" i]'
+    selector: 'input[formcontrolname="eticketnum"], input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i], input[formcontrolname*="booking" i], input[formcontrolname*="ticket" i], input[name*="bookingRef" i], input[name*="pnr" i], input[id*="pnr" i]'
     label: "E-Ticket"
   surname:
-    selector: 'input[placeholder*="Last name" i], input[aria-label*="Last name" i], input[formcontrolname*="lastName" i], input[name*="lastName" i], input[name*="surname" i]'
+    selector: 'input[formcontrolname="lastName"], input[placeholder*="Last name" i], input[aria-label*="Last name" i], input[formcontrolname*="lastName" i], input[name*="lastName" i], input[name*="surname" i]'
     label: "Last name"
 focus_after_fill: surname          # Last name is the second box: press Enter there
 # The Continue button lives in a popup that opens only when a box is clicked (image copy 42.png).
@@ -31,8 +31,8 @@ auto_submit:
   # Saudia is protected by Imperva ("Pardon Our Interruption"), stricter than MH: slower, wider
   # jitter. Auto-continue switches itself off at the first block page.
   allowed: true
-  min_gap_ms: 10000
-  max_gap_ms: 18000
+  min_gap_ms: 8000
+  max_gap_ms: 14000
   button_text: "Continue"          # the popup's green Continue button (image copy 42.png)
 result_detect:
   # The search form is .../manage/manage-booking (with a hyphen); the result is .../managemybooking.
@@ -41,6 +41,7 @@ not_found_detect:
   selector: null
   # Saudia's exact wording is not known yet: add it here after the first not-found booking.
   text_contains:
+    - "couldn't find this booking"   # real wording (2026-10-31)
     - "booking cannot be found"
     - "booking could not be found"
     - "could not find your booking"

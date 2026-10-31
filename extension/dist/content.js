@@ -74,6 +74,75 @@
 		}
 		return parts.filter(Boolean).join("\n");
 	}
+	var apiAnswers = [];
+	window.addEventListener("message", (e) => {
+		const d = e.data;
+		if (e.source !== window || !d?.__gdsApi) return;
+		apiAnswers.push({
+			url: d.url,
+			status: d.status,
+			body: d.body
+		});
+		schedule();
+	});
+	var parse = (s) => {
+		try {
+			return JSON.parse(s);
+		} catch {
+			return null;
+		}
+	};
+	var hhmm = (iso) => (iso ?? "").slice(0, 16).replace("T", " ");
+	/** Readable booking text from Saudia's full order. Passport, birth date, nationality and payment
+	* details are left out on purpose (never uploaded). */
+	function saudiaOrderText(order) {
+		const d = order.data ?? {};
+		const fl = order.dictionaries?.flight ?? {};
+		const fno = (id) => fl[id] ? `${fl[id].marketingAirlineCode ?? "SV"}${fl[id].marketingFlightNumber ?? ""}` : id;
+		const lines = [
+			"SAUDIA BOOKING (read from Saudia's booking API)",
+			`Booking reference: ${d.id ?? ""}`,
+			`Numeric booking reference: ${d.numericId ?? ""}`,
+			`Booked on: ${hhmm(d.creationDateTime)}  Office: ${d.creationPointOfSale?.pointOfSaleId ?? ""}`,
+			`Group booking: ${d.isGroupBooking ? "yes" : "no"}`,
+			"Flights:"
+		];
+		for (const b of d.air?.bounds ?? []) for (const f of b.flights ?? []) {
+			const x = fl[f.id] ?? {};
+			lines.push(`  ${fno(f.id)} ${x.departure?.locationCode ?? ""}-${x.arrival?.locationCode ?? ""} dep ${hhmm(x.departure?.dateTime)} arr ${hhmm(x.arrival?.dateTime)} class ${f.bookingClass ?? ""} cabin ${f.cabin ?? ""} status ${f.statusCode ?? ""} fare family ${b.fareFamilyCode ?? ""}`);
+		}
+		lines.push("Passengers:");
+		for (const t of d.travelers ?? []) {
+			const n = (t.names ?? [])[0] ?? {};
+			const tickets = (d.travelDocuments ?? []).filter((x) => (x.travelerIds ?? []).includes(t.id));
+			const seats = (d.seats ?? []).flatMap((s) => (s.seatSelections ?? []).filter((x) => x.travelerId === t.id).map((x) => `${fno(s.flightId)} ${x.seatNumber}`));
+			const checkin = (d.air?.airCheckIn ?? []).filter((c) => c.travelerId === t.id).map((c) => `${fno(c.flightId)} ${c.checkInStatus}`);
+			const bag = (d.air?.freeCheckedBaggageAllowanceItems ?? []).find((b) => (b.travelerIds ?? []).includes(t.id))?.details;
+			const fare = (d.air?.fareInfos ?? []).find((f) => (f.travelerIds ?? []).includes(t.id))?.fareClass;
+			lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${n.firstName ?? ""} (${t.passengerTypeCode ?? ""})`);
+			for (const tk of tickets) {
+				const p = tk.price;
+				lines.push(`    E-ticket ${tk.id} ${tk.documentType ?? ""}${p ? ` total ${p.total / 100} ${p.currencyCode}` : ""}${p?.conditions?.tourCode ? ` tour code ${p.conditions.tourCode}` : ""}`);
+			}
+			lines.push(`    Seats: ${seats.join(", ") || "-"} | Check-in: ${checkin.join(", ") || "-"} | Baggage: ${bag ? `${bag.quantity}${bag.type === "piece" ? "PC" : bag.unit ?? ""}` : "-"} | Fare basis: ${fare ?? "-"}`);
+		}
+		const warn = (order.warnings ?? []).map((w) => w.title).filter(Boolean);
+		if (warn.length) lines.push(`Saudia notes: ${warn.join("; ")}`);
+		return lines.join("\n");
+	}
+	/** What Saudia's API said about the search on screen: the full booking, a "not found", or nothing yet. */
+	function apiOutcome() {
+		for (const a of apiAnswers) {
+			const j = parse(a.body);
+			if (a.url.includes("/purchase/orders/") && j?.data?.numericId) return { order: j };
+		}
+		for (const a of apiAnswers) {
+			const j = parse(a.body);
+			const bad = [...j?.warnings ?? [], ...j?.errors ?? []].map((w) => String(w.title ?? w.detail ?? "")).find((w) => /INVALID TRAVEL DOCUMENT|NOT FOUND|DOES NOT EXIST/i.test(w));
+			if (a.url.includes("order-previews") && bad && !j?.data?.[0]?.id) return { notFound: bad };
+		}
+		return null;
+	}
 	function send(msg) {
 		return chrome.runtime.sendMessage(msg).catch(() => null);
 	}
@@ -113,13 +182,20 @@
 		for (const l of Array.from(el.labels ?? [])) parts.push(l.textContent ?? "");
 		return parts.join(" ").replace(/\s+/g, " ").toLowerCase();
 	}
-	/** A search-form input: the profile's selector, else the input whose label contains spec.label. */
+	/**
+	* A search-form input: the profile's selector, else the input whose label contains spec.label.
+	* Of several on screen the last one wins: a popup copy of the form (Saudia's Continue popup) is
+	* added after the page's own form and covers it.
+	*/
 	function findField(spec) {
-		const bySelector = find(spec.selector);
+		const pick = (all) => all.filter(rendered).pop() ?? all[0] ?? null;
+		if (isSelectorSet(spec.selector)) try {
+			const hit = pick(Array.from(document.querySelectorAll(spec.selector)));
+			if (hit) return hit;
+		} catch {}
 		const label = spec.label?.trim().toLowerCase();
-		if (bySelector || !label) return bySelector;
-		const all = Array.from(document.querySelectorAll(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label));
-		return all.find(rendered) ?? all[0] ?? null;
+		if (!label) return null;
+		return pick(Array.from(document.querySelectorAll(TEXT_INPUTS)).filter((el) => labelOf(el).includes(label)));
 	}
 	var SKIP_TAGS = /* @__PURE__ */ new Set([
 		"SCRIPT",
@@ -284,6 +360,32 @@
 		}
 		const item = ins.item;
 		if (!item) return status("Waiting for bookings…");
+		if (ins.searched && !handled) {
+			const api = apiOutcome();
+			if (api && "order" in api) {
+				handled = true;
+				log("api: booking", api.order.data?.id, "for", item.pnr);
+				status(`Captured ✓ ${item.pnr} (${api.order.data?.id ?? ""})`);
+				send({
+					type: "result",
+					pnr: item.pnr,
+					text: saudiaOrderText(api.order),
+					url: location.href,
+					recapture: !!item.recapture
+				}).then(apply);
+				return;
+			}
+			if (api && "notFound" in api) {
+				handled = true;
+				log("api: not found", item.pnr, api.notFound);
+				send({
+					type: "notfound",
+					pnr: item.pnr,
+					reason: `Saudia: ${api.notFound}`
+				}).then(apply);
+				return;
+			}
+		}
 		const nf = profile.not_found_detect;
 		const nfWord = includesAny(text, nf.text_contains);
 		const nfStale = nfAtSearch && Date.now() - (ins.lastSearchAt ?? 0) < NF_STALE_MS;
@@ -379,8 +481,9 @@
 		}) ?? null;
 	}
 	/**
-	* Show a search form that sits behind a tab. This only switches the visible tab: the form is
-	* not sent and no search starts (the staff member's Enter does that). A few tries per page load.
+	* Show a search form that sits behind a tab, or (Saudia) open the popup that holds the Continue
+	* button by clicking the ticket box. This only shows the form: it is not sent and no search starts
+	* (the staff member's Enter or Auto-continue does that). A few tries per page load.
 	*/
 	function openForm(pnrEl) {
 		if (!ins?.running || ins.paused || openFormTries >= OPEN_FORM_TRIES) return;
@@ -399,6 +502,7 @@
 		ins.searched = true;
 		ins.lastSearchAt = Date.now();
 		nfAtSearch = notFoundShown();
+		apiAnswers = [];
 		log("search noticed for", pnr);
 		send({
 			type: "searched",
@@ -413,7 +517,7 @@
 	function disabled(button) {
 		return button.disabled || button.getAttribute("aria-disabled") === "true";
 	}
-	var BUTTON_SEARCH_LEVELS = 6;
+	var BUTTON_SEARCH_LEVELS = 10;
 	/**
 	* The Continue/submit button of the form that holds the PNR field. Sites without a <form>
 	* element (e.g. Saudia's Angular manage-booking box): the nearest enclosing block that has an
@@ -426,8 +530,11 @@
 		const form = pnrEl.closest("form");
 		if (form) {
 			const buttons = buttonsIn(form);
-			return buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? (text ? buttons.find((b) => label(b) === text) : void 0) ?? null;
+			return (text ? buttons.find((b) => label(b) === text) : void 0) ?? buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? null;
 		}
+		const dialog = text ? pnrEl.closest("[role=dialog], [aria-modal=true], dialog, .modal, .cdk-overlay-pane") : null;
+		const inDialog = dialog ? buttonsIn(dialog).find((b) => label(b) === text) : void 0;
+		if (inDialog) return inDialog;
 		let root = pnrEl.parentElement;
 		for (let level = 0; root && level < BUTTON_SEARCH_LEVELS; level++, root = root.parentElement) {
 			const buttons = buttonsIn(root);
@@ -443,7 +550,10 @@
 	function scheduleContinue(item, surnameEl, pnrEl) {
 		if (!autoReady(item, surnameEl, pnrEl)) return null;
 		const button = continueButton(pnrEl);
-		if (!button) return `Auto-continue: no Continue button found — press Enter · ${item.pnr}`;
+		if (!button) {
+			openForm(pnrEl);
+			return `Auto-continue: no Continue button found — press Enter · ${item.pnr}`;
+		}
 		if (disabled(button)) return `Auto-continue: waiting for the site to accept the fields · ${item.pnr}`;
 		if (autoFor !== item.pnr) {
 			autoFor = item.pnr;

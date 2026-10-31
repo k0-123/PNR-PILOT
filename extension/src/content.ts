@@ -70,6 +70,82 @@ function pageText(root: ParentNode = document): string {
   return parts.filter(Boolean).join("\n");
 }
 
+// ------------------------------------------------------------ Saudia API answers
+// saudiaHook.ts (in the page) forwards the booking API's answers. They are reset at each search.
+type ApiAnswer = { url: string; status: number; body: string };
+let apiAnswers: ApiAnswer[] = [];
+window.addEventListener("message", (e) => {
+  const d = e.data as (ApiAnswer & { __gdsApi?: boolean }) | null;
+  if (e.source !== window || !d?.__gdsApi) return;
+  apiAnswers.push({ url: d.url, status: d.status, body: d.body });
+  schedule();
+});
+
+type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const parse = (s: string): Json | null => {
+  try {
+    return JSON.parse(s) as Json;
+  } catch {
+    return null;
+  }
+};
+const hhmm = (iso?: string) => (iso ?? "").slice(0, 16).replace("T", " ");
+
+/** Readable booking text from Saudia's full order. Passport, birth date, nationality and payment
+ * details are left out on purpose (never uploaded). */
+function saudiaOrderText(order: Json): string {
+  const d = order.data ?? {};
+  const fl: Json = order.dictionaries?.flight ?? {};
+  const fno = (id: string) => (fl[id] ? `${fl[id].marketingAirlineCode ?? "SV"}${fl[id].marketingFlightNumber ?? ""}` : id);
+  const lines = [
+    "SAUDIA BOOKING (read from Saudia's booking API)",
+    `Booking reference: ${d.id ?? ""}`,
+    `Numeric booking reference: ${d.numericId ?? ""}`,
+    `Booked on: ${hhmm(d.creationDateTime)}  Office: ${d.creationPointOfSale?.pointOfSaleId ?? ""}`,
+    `Group booking: ${d.isGroupBooking ? "yes" : "no"}`,
+    "Flights:",
+  ];
+  for (const b of d.air?.bounds ?? []) {
+    for (const f of b.flights ?? []) {
+      const x = fl[f.id] ?? {};
+      lines.push(`  ${fno(f.id)} ${x.departure?.locationCode ?? ""}-${x.arrival?.locationCode ?? ""} dep ${hhmm(x.departure?.dateTime)} arr ${hhmm(x.arrival?.dateTime)} class ${f.bookingClass ?? ""} cabin ${f.cabin ?? ""} status ${f.statusCode ?? ""} fare family ${b.fareFamilyCode ?? ""}`);
+    }
+  }
+  lines.push("Passengers:");
+  for (const t of d.travelers ?? []) {
+    const n = (t.names ?? [])[0] ?? {};
+    const tickets = (d.travelDocuments ?? []).filter((x: Json) => (x.travelerIds ?? []).includes(t.id));
+    const seats = (d.seats ?? []).flatMap((s: Json) => (s.seatSelections ?? []).filter((x: Json) => x.travelerId === t.id).map((x: Json) => `${fno(s.flightId)} ${x.seatNumber}`));
+    const checkin = (d.air?.airCheckIn ?? []).filter((c: Json) => c.travelerId === t.id).map((c: Json) => `${fno(c.flightId)} ${c.checkInStatus}`);
+    const bag = (d.air?.freeCheckedBaggageAllowanceItems ?? []).find((b: Json) => (b.travelerIds ?? []).includes(t.id))?.details;
+    const fare = (d.air?.fareInfos ?? []).find((f: Json) => (f.travelerIds ?? []).includes(t.id))?.fareClass;
+    lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${n.firstName ?? ""} (${t.passengerTypeCode ?? ""})`);
+    for (const tk of tickets) {
+      const p = tk.price;
+      lines.push(`    E-ticket ${tk.id} ${tk.documentType ?? ""}${p ? ` total ${p.total / 100} ${p.currencyCode}` : ""}${p?.conditions?.tourCode ? ` tour code ${p.conditions.tourCode}` : ""}`);
+    }
+    lines.push(`    Seats: ${seats.join(", ") || "-"} | Check-in: ${checkin.join(", ") || "-"} | Baggage: ${bag ? `${bag.quantity}${bag.type === "piece" ? "PC" : bag.unit ?? ""}` : "-"} | Fare basis: ${fare ?? "-"}`);
+  }
+  const warn = (order.warnings ?? []).map((w: Json) => w.title).filter(Boolean);
+  if (warn.length) lines.push(`Saudia notes: ${warn.join("; ")}`);
+  return lines.join("\n");
+}
+
+/** What Saudia's API said about the search on screen: the full booking, a "not found", or nothing yet. */
+function apiOutcome(): { order: Json } | { notFound: string } | null {
+  for (const a of apiAnswers) {
+    const j = parse(a.body);
+    if (a.url.includes("/purchase/orders/") && j?.data?.numericId) return { order: j };
+  }
+  for (const a of apiAnswers) {
+    const j = parse(a.body);
+    const warn = [...(j?.warnings ?? []), ...(j?.errors ?? [])].map((w: Json) => String(w.title ?? w.detail ?? ""));
+    const bad = warn.find((w) => /INVALID TRAVEL DOCUMENT|NOT FOUND|DOES NOT EXIST/i.test(w));
+    if (a.url.includes("order-previews") && bad && !j?.data?.[0]?.id) return { notFound: bad };
+  }
+  return null;
+}
+
 function send(msg: ContentMessage): Promise<ContentInstruction | null> {
   return chrome.runtime.sendMessage(msg).catch(() => null);
 }
@@ -303,6 +379,25 @@ function evaluate(): void {
   const item = ins.item;
   if (!item) return status("Waiting for bookings…");
 
+  // 1b. Saudia: the booking API already answered (full booking, or ticket/name not found). The
+  // page may show only a blank error box for group bookings, so this comes before reading the page.
+  if (ins.searched && !handled) {
+    const api = apiOutcome();
+    if (api && "order" in api) {
+      handled = true;
+      log("api: booking", api.order.data?.id, "for", item.pnr);
+      status(`Captured ✓ ${item.pnr} (${api.order.data?.id ?? ""})`);
+      void send({ type: "result", pnr: item.pnr, text: saudiaOrderText(api.order), url: location.href, recapture: !!item.recapture }).then(apply);
+      return;
+    }
+    if (api && "notFound" in api) {
+      handled = true;
+      log("api: not found", item.pnr, api.notFound);
+      void send({ type: "notfound", pnr: item.pnr, reason: `Saudia: ${api.notFound}` }).then(apply);
+      return;
+    }
+  }
+
   // 2. "Booking not found" message (only after the person searched this booking).
   const nf = profile.not_found_detect;
   // MH shows these messages above the search form itself, so a message still on screen from the
@@ -443,6 +538,7 @@ function noteSearched(): void {
   // booking's search, so a booking could be "timed out" a second after its own search (job 17).
   ins.lastSearchAt = Date.now();
   nfAtSearch = notFoundShown();
+  apiAnswers = []; // only answers to this search count
   log("search noticed for", pnr);
   void send({ type: "searched", pnr });
 }

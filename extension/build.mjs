@@ -8,6 +8,7 @@ const entries = [
   { entry: "src/background.ts", name: "background", format: "es" },
   { entry: "src/content.ts", name: "content", format: "iife" },
   { entry: "src/sidepanel.ts", name: "sidepanel", format: "iife" },
+  { entry: "src/saudiaHook.ts", name: "saudiaHook", format: "iife" },
 ];
 for (const e of entries) {
   await build({
