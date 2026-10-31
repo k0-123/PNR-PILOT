@@ -530,7 +530,7 @@
 		const form = pnrEl.closest("form");
 		if (form) {
 			const buttons = buttonsIn(form);
-			return (text ? buttons.find((b) => label(b) === text) : void 0) ?? buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? null;
+			return (text ? buttons.find((b) => label(b) === text) : void 0) ?? buttons.find((b) => b.getAttribute("type") === "submit" || b.tagName === "BUTTON" && !b.getAttribute("type")) ?? (text ? Array.from(form.querySelectorAll("button")).find((b) => (b.textContent ?? "").trim().toLowerCase() === text) : void 0) ?? null;
 		}
 		const dialog = text ? pnrEl.closest("[role=dialog], [aria-modal=true], dialog, .modal, .cdk-overlay-pane") : null;
 		const inDialog = dialog ? buttonsIn(dialog).find((b) => label(b) === text) : void 0;

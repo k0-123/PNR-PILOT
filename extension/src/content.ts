@@ -577,6 +577,8 @@ function continueButton(pnrEl: HTMLElement): HTMLElement | null {
     const buttons = buttonsIn(form);
     return (text ? buttons.find((b) => label(b) === text) : undefined)
       ?? buttons.find((b) => b.getAttribute("type") === "submit" || (b.tagName === "BUTTON" && !b.getAttribute("type")))
+      // Saudia: the form's own Continue is hidden until a real keypress opens the popup; it still works.
+      ?? (text ? Array.from(form.querySelectorAll<HTMLElement>("button")).find((b) => (b.textContent ?? "").trim().toLowerCase() === text) : undefined)
       ?? null;
   }
   // A popup (Saudia): its Continue sits in the popup's footer, further from the box than the levels below.
