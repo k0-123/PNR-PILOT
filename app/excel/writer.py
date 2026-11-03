@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -146,10 +147,11 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
     # The searched e-ticket (Excel #1's own column) shows in the result's "E-Ticket Number" column.
     split = base_headers.index("E-Ticket Number")
     headers = [*base_headers[:split],
-               *[f.label for f in result_fields.fields], "Lookup Status", "Error",
+               *[f.label for f in result_fields.fields], "Email", "Lookup Status", "Error",
                *base_headers[split + 1:], "Edited Surname", "Edited PNR",
                "Attempts", "Looked Up At", "Looked Up By", "Source"]
     rows = []
+    used: dict[str, int] = {}
     for r, base in zip(db_rows, base_rows):
         try:
             data = json.loads(r["result_json"]) if r["result_json"] else {}
@@ -163,13 +165,22 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
                 data["e_ticket_number"] = r["pnr"]
         rows.append([
             *base[:split],
-            *[data.get(f.key) for f in result_fields.fields],
+            *[data.get(f.key) for f in result_fields.fields], _email(r, used),
             r["lookup_status"] if eligible else None, r["error_message"],
             *base[split + 1:], r["edited_surname"], r["edited_pnr"],
             r["attempts"] or None, r["lookup_finished_at"],
             _get(r, "looked_up_by"), _source(r) if eligible else None,
         ])
     return headers, rows
+
+
+def _email(r, used: dict[str, int]) -> str | None:
+    """firstname@pnrcaptain.com; jessica2@, jessica3@... when a first name repeats in the job."""
+    name = re.sub(r"[^a-z]", "", str(_get(r, "effective_first_name") or r["first_name"] or "").lower())[:20]
+    if not name:
+        return None
+    used[name] = used.get(name, 0) + 1
+    return f"{name}{used[name] if used[name] > 1 else ''}@pnrcaptain.com"
 
 
 def _get(r, key):

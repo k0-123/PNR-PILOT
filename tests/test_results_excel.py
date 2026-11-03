@@ -29,8 +29,8 @@ def test_final_excel_and_csv(db, storage, settings):
     # who the row is, then what the lookup found (on screen when the file opens), then the rest
     assert headers[:7] == ["Image name", "Line No", "Pax", "Surname", "First Name", "Title", "PNR"]
     assert headers[7:7 + len(labels)] == labels
-    assert headers[7 + len(labels):9 + len(labels)] == ["Lookup Status", "Error"]
-    assert headers[9 + len(labels)] == "Class"
+    assert headers[7 + len(labels):10 + len(labels)] == ["Email", "Lookup Status", "Error"]
+    assert headers[10 + len(labels)] == "Class"
     assert headers[-6:] == ["Edited Surname", "Edited PNR", "Attempts", "Looked Up At", "Looked Up By", "Source"]
     vals = [[c.value for c in r] for r in ws.iter_rows(min_row=2)]
     col = {h: i for i, h in enumerate(headers)}
