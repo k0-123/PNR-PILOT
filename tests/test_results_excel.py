@@ -1,4 +1,6 @@
 """The final Excel/CSV."""
+import re
+
 from openpyxl import load_workbook
 
 from app.core.config import load_result_fields
@@ -29,8 +31,8 @@ def test_final_excel_and_csv(db, storage, settings):
     # who the row is, then what the lookup found (on screen when the file opens), then the rest
     assert headers[:7] == ["Image name", "Line No", "Pax", "Surname", "First Name", "Title", "PNR"]
     assert headers[7:7 + len(labels)] == labels
-    assert headers[7 + len(labels):10 + len(labels)] == ["Email", "Lookup Status", "Error"]
-    assert headers[10 + len(labels)] == "Class"
+    assert headers[7 + len(labels):11 + len(labels)] == ["Email", "Code", "Lookup Status", "Error"]
+    assert headers[11 + len(labels)] == "Class"
     assert headers[-6:] == ["Edited Surname", "Edited PNR", "Attempts", "Looked Up At", "Looked Up By", "Source"]
     vals = [[c.value for c in r] for r in ws.iter_rows(min_row=2)]
     col = {h: i for i, h in enumerate(headers)}
@@ -39,6 +41,8 @@ def test_final_excel_and_csv(db, storage, settings):
     evil = ws.cell(row=5, column=col["Surname"] + 1)
     assert (evil.value, evil.data_type, evil.quotePrefix) == ("=EVIL", "s", True)  # text, never a formula
     assert vals[0][col["Flight Number(s)"]] == "AI 001"
+    codes = [v[col["Code"]] for v in vals]
+    assert len(set(codes)) == len(codes) and all(re.fullmatch(r"[A-Z]\d{6}", c) for c in codes)
 
     summary = {r[0].value: r[1].value for r in wb["Summary"].iter_rows(min_row=2)}
     assert (summary["Total rows"], summary["Success"], summary["Not found"], summary["Failed"],

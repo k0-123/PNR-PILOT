@@ -147,8 +147,8 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
     # The searched e-ticket (Excel #1's own column) shows in the result's "E-Ticket Number" column.
     split = base_headers.index("E-Ticket Number")
     headers = [*base_headers[:split],
-               *[f.label for f in result_fields.fields], "Email", "Lookup Status", "Error",
-               *base_headers[split + 1:], "Edited Surname", "Edited PNR",
+               *[f.label for f in result_fields.fields], "Email", "Code", "Lookup Status",
+               "Error", *base_headers[split + 1:], "Edited Surname", "Edited PNR",
                "Attempts", "Looked Up At", "Looked Up By", "Source"]
     rows = []
     used: dict[str, int] = {}
@@ -166,7 +166,7 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
         rows.append([
             *base[:split],
             *[data.get(f.key) for f in result_fields.fields], _email(r, used),
-            r["lookup_status"] if eligible else None, r["error_message"],
+            _code(r), r["lookup_status"] if eligible else None, r["error_message"],
             *base[split + 1:], r["edited_surname"], r["edited_pnr"],
             r["attempts"] or None, r["lookup_finished_at"],
             _get(r, "looked_up_by"), _source(r) if eligible else None,
@@ -181,6 +181,14 @@ def _email(r, used: dict[str, int]) -> str | None:
         return None
     used[name] = used.get(name, 0) + 1
     return f"{name}{used[name] if used[name] > 1 else ''}@pnrcaptain.com"
+
+
+def _code(r) -> str:
+    """A letter + 6 digits (e.g. K356876), different for every row: a scrambled form of the
+    row's database id, so it never repeats (in a file or across jobs) and stays the same on
+    re-export."""
+    n = (int(r["id"]) * 15_485_863 + 3_456_789) % 26_000_000   # multiplier coprime to 26M
+    return f"{chr(65 + n // 1_000_000)}{n % 1_000_000:06d}"
 
 
 def _get(r, key):
