@@ -8,10 +8,12 @@
 import {
   autoGapMs,
   HOTKEYS,
+  frequentFlyer,
   includesAny,
   isSelectorSet,
   isTicket,
   pnrOnPage,
+  SAUDIA_API_TEXT,
   type ContentInstruction,
   type ContentMessage,
   type FieldSpec,
@@ -98,7 +100,7 @@ function saudiaOrderText(order: Json): string {
   const fl: Json = order.dictionaries?.flight ?? {};
   const fno = (id: string) => (fl[id] ? `${fl[id].marketingAirlineCode ?? "SV"}${fl[id].marketingFlightNumber ?? ""}` : id);
   const lines = [
-    "SAUDIA BOOKING (read from Saudia's booking API)",
+    SAUDIA_API_TEXT,
     `Booking reference: ${d.id ?? ""}`,
     `Numeric booking reference: ${d.numericId ?? ""}`,
     `Booked on: ${hhmm(d.creationDateTime)}  Office: ${d.creationPointOfSale?.pointOfSaleId ?? ""}`,
@@ -119,7 +121,11 @@ function saudiaOrderText(order: Json): string {
     const checkin = (d.air?.airCheckIn ?? []).filter((c: Json) => c.travelerId === t.id).map((c: Json) => `${fno(c.flightId)} ${c.checkInStatus}`);
     const bag = (d.air?.freeCheckedBaggageAllowanceItems ?? []).find((b: Json) => (b.travelerIds ?? []).includes(t.id))?.details;
     const fare = (d.air?.fareInfos ?? []).find((f: Json) => (f.travelerIds ?? []).includes(t.id))?.fareClass;
-    lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${n.firstName ?? ""} (${t.passengerTypeCode ?? ""})`);
+    const full = [n.title, n.firstName, n.middleName, n.lastName].filter(Boolean).join(" ").toUpperCase();
+    lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${[n.firstName, n.middleName].filter(Boolean).join(" ")} (${t.passengerTypeCode ?? ""})`);
+    lines.push(`    Full name: ${full}`);
+    const ff = frequentFlyer(order, t);
+    lines.push(`    Frequent flyer: ${ff.join(", ") || "none"}`);
     for (const tk of tickets) {
       const p = tk.price;
       lines.push(`    E-ticket ${tk.id} ${tk.documentType ?? ""}${p ? ` total ${p.total / 100} ${p.currencyCode}` : ""}${p?.conditions?.tourCode ? ` tour code ${p.conditions.tourCode}` : ""}`);
@@ -480,7 +486,7 @@ function notFoundShown(): boolean {
 }
 
 const OPEN_FORM_TRIES = 3;
-const OPEN_FORM_RETRY_MS = 1500;
+const OPEN_FORM_RETRY_MS = 700;
 let openFormTries = 0;
 let openFormAt = 0;
 
@@ -549,7 +555,7 @@ function noteSearched(): void {
 // the search form's own Continue/submit button once the form is filled and visible, at most once
 // per page and at least profile.auto_submit.min_gap_ms after the previous search. The background
 // switches it off at the first CAPTCHA / block, so it never searches into one.
-const AUTO_SETTLE_MS = 800; // let the site's app take in the filled values first
+const AUTO_SETTLE_MS = 400; // let the site's app take in the filled values first
 let autoTimer: ReturnType<typeof setTimeout> | undefined;
 let autoFor: string | null = null; // PNR an automatic press is scheduled / done for on this page
 let autoGap = 0; // the randomized gap chosen for autoFor (kept so the countdown doesn't jitter)

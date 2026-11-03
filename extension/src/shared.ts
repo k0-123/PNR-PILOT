@@ -145,6 +145,9 @@ export function backoffMs(tries: number): number {
  * when that is set and larger. A random value in [min, max] (not a fixed interval) makes the
  * automation look less like a bot. `rand` is injectable for tests; it defaults to Math.random.
  */
+/** First line of the text built from Saudia's booking API answer (content.ts saudiaOrderText). */
+export const SAUDIA_API_TEXT = "SAUDIA BOOKING (read from Saudia's booking API)";
+
 export function autoGapMs(
   auto: { min_gap_ms?: number | null; max_gap_ms?: number | null } | null | undefined,
   rand: () => number = Math.random,
@@ -152,4 +155,38 @@ export function autoGapMs(
   const min = Math.max(0, auto?.min_gap_ms ?? 6000);
   const max = Math.max(min, auto?.max_gap_ms ?? 0);
   return Math.round(min + (max - min) * rand());
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Json = Record<string, any>;
+
+/** Frequent flyer cards of one traveler, e.g. "ALFURSAN SV 123456789 (Silver)". Saudia's order keeps
+ * them under different keys depending on the booking (data.frequentFlyerCards, on the traveler,
+ * loyalty...), so the whole order is searched for card-like objects that belong to this traveler. */
+export function frequentFlyer(order: Json, t: Json): string[] {
+  const out = new Set<string>();
+  const numKey = /^(cardNumber|frequentFlyerNumber|membershipNumber|membershipId|loyaltyNumber|ffNumber)$/i;
+  const owns = (o: Json, inTraveler: boolean) =>
+    inTraveler || o.travelerId === t.id || (Array.isArray(o.travelerIds) && o.travelerIds.includes(t.id));
+  const walk = (v: unknown, inTraveler: boolean, depth: number): void => {
+    if (!v || typeof v !== "object" || depth > 8) return;
+    if (Array.isArray(v)) return v.forEach((x) => walk(x, inTraveler, depth + 1));
+    const o = v as Json;
+    const k = Object.keys(o).find((x) => numKey.test(x) && o[x]);
+    if (k && owns(o, inTraveler)) {
+      const prog = o.programName ?? o.loyaltyProgramName ?? o.companyCode ?? o.airlineCode ?? o.programOwner ?? "";
+      const tier = o.tierLevelName ?? o.tierLevel ?? o.tier ?? "";
+      const name = /^SV$/i.test(String(prog)) ? "ALFURSAN SV" : String(prog);
+      out.add(`${name} ${o[k]}${tier ? ` (${tier})` : ""}`.trim());
+    }
+    for (const [key, x] of Object.entries(o)) {
+      if (key === "travelDocuments" || key === "dictionaries") continue;
+      walk(x, inTraveler, depth + 1);
+    }
+  };
+  walk(t, true, 0);
+  const { travelers, ...rest } = order.data ?? {};
+  void travelers;
+  walk(rest, false, 0);
+  return [...out];
 }

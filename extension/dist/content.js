@@ -31,10 +31,40 @@
 	* when that is set and larger. A random value in [min, max] (not a fixed interval) makes the
 	* automation look less like a bot. `rand` is injectable for tests; it defaults to Math.random.
 	*/
+	/** First line of the text built from Saudia's booking API answer (content.ts saudiaOrderText). */
+	var SAUDIA_API_TEXT = "SAUDIA BOOKING (read from Saudia's booking API)";
 	function autoGapMs(auto, rand = Math.random) {
 		const min = Math.max(0, auto?.min_gap_ms ?? 6e3);
 		const max = Math.max(min, auto?.max_gap_ms ?? 0);
 		return Math.round(min + (max - min) * rand());
+	}
+	/** Frequent flyer cards of one traveler, e.g. "ALFURSAN SV 123456789 (Silver)". Saudia's order keeps
+	* them under different keys depending on the booking (data.frequentFlyerCards, on the traveler,
+	* loyalty...), so the whole order is searched for card-like objects that belong to this traveler. */
+	function frequentFlyer(order, t) {
+		const out = /* @__PURE__ */ new Set();
+		const numKey = /^(cardNumber|frequentFlyerNumber|membershipNumber|membershipId|loyaltyNumber|ffNumber)$/i;
+		const owns = (o, inTraveler) => inTraveler || o.travelerId === t.id || Array.isArray(o.travelerIds) && o.travelerIds.includes(t.id);
+		const walk = (v, inTraveler, depth) => {
+			if (!v || typeof v !== "object" || depth > 8) return;
+			if (Array.isArray(v)) return v.forEach((x) => walk(x, inTraveler, depth + 1));
+			const o = v;
+			const k = Object.keys(o).find((x) => numKey.test(x) && o[x]);
+			if (k && owns(o, inTraveler)) {
+				const prog = o.programName ?? o.loyaltyProgramName ?? o.companyCode ?? o.airlineCode ?? o.programOwner ?? "";
+				const tier = o.tierLevelName ?? o.tierLevel ?? o.tier ?? "";
+				const name = /^SV$/i.test(String(prog)) ? "ALFURSAN SV" : String(prog);
+				out.add(`${name} ${o[k]}${tier ? ` (${tier})` : ""}`.trim());
+			}
+			for (const [key, x] of Object.entries(o)) {
+				if (key === "travelDocuments" || key === "dictionaries") continue;
+				walk(x, inTraveler, depth + 1);
+			}
+		};
+		walk(t, true, 0);
+		const { travelers, ...rest } = order.data ?? {};
+		walk(rest, false, 0);
+		return [...out];
 	}
 	//#endregion
 	//#region src/content.ts
@@ -100,7 +130,7 @@
 		const fl = order.dictionaries?.flight ?? {};
 		const fno = (id) => fl[id] ? `${fl[id].marketingAirlineCode ?? "SV"}${fl[id].marketingFlightNumber ?? ""}` : id;
 		const lines = [
-			"SAUDIA BOOKING (read from Saudia's booking API)",
+			SAUDIA_API_TEXT,
 			`Booking reference: ${d.id ?? ""}`,
 			`Numeric booking reference: ${d.numericId ?? ""}`,
 			`Booked on: ${hhmm(d.creationDateTime)}  Office: ${d.creationPointOfSale?.pointOfSaleId ?? ""}`,
@@ -119,7 +149,16 @@
 			const checkin = (d.air?.airCheckIn ?? []).filter((c) => c.travelerId === t.id).map((c) => `${fno(c.flightId)} ${c.checkInStatus}`);
 			const bag = (d.air?.freeCheckedBaggageAllowanceItems ?? []).find((b) => (b.travelerIds ?? []).includes(t.id))?.details;
 			const fare = (d.air?.fareInfos ?? []).find((f) => (f.travelerIds ?? []).includes(t.id))?.fareClass;
-			lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${n.firstName ?? ""} (${t.passengerTypeCode ?? ""})`);
+			const full = [
+				n.title,
+				n.firstName,
+				n.middleName,
+				n.lastName
+			].filter(Boolean).join(" ").toUpperCase();
+			lines.push(`  ${n.title ?? ""} ${n.lastName ?? ""} / ${[n.firstName, n.middleName].filter(Boolean).join(" ")} (${t.passengerTypeCode ?? ""})`);
+			lines.push(`    Full name: ${full}`);
+			const ff = frequentFlyer(order, t);
+			lines.push(`    Frequent flyer: ${ff.join(", ") || "none"}`);
 			for (const tk of tickets) {
 				const p = tk.price;
 				lines.push(`    E-ticket ${tk.id} ${tk.documentType ?? ""}${p ? ` total ${p.total / 100} ${p.currencyCode}` : ""}${p?.conditions?.tourCode ? ` tour code ${p.conditions.tourCode}` : ""}`);
@@ -455,7 +494,7 @@
 		return !!nf && (!!find(nf.selector) || !!includesAny(pageText(), nf.text_contains));
 	}
 	var OPEN_FORM_TRIES = 3;
-	var OPEN_FORM_RETRY_MS = 1500;
+	var OPEN_FORM_RETRY_MS = 700;
 	var openFormTries = 0;
 	var openFormAt = 0;
 	/** The profile's "open the form" control (e.g. MH's "My booking" tab), if it is safe to press. */
@@ -509,7 +548,7 @@
 			pnr
 		});
 	}
-	var AUTO_SETTLE_MS = 800;
+	var AUTO_SETTLE_MS = 400;
 	var autoTimer;
 	var autoFor = null;
 	var autoGap = 0;

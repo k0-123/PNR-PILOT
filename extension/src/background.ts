@@ -6,7 +6,9 @@
 import { outbox, type OutboxItem } from "./outbox";
 import {
   backoffMs,
+  isTicket,
   matchesPattern,
+  SAUDIA_API_TEXT,
   MIN_TEXT_CHARS,
   type ContentInstruction,
   type ContentMessage,
@@ -287,7 +289,20 @@ async function onContent(msg: ContentMessage, sender: chrome.runtime.MessageSend
           advance(s);
           s.session.done += 1;
         }
-        s.statusLine = `Captured ✓ ${msg.pnr}`;
+        // Saudia: one search returns the whole booking with every passenger's e-ticket. Rows of the
+        // same family/group still waiting in the queue get this same answer (the server fills only
+        // the passenger holding that ticket), so they need no search of their own.
+        const siblings = msg.text.startsWith(SAUDIA_API_TEXT)
+          ? s.queue.filter((l, i) => (i > 0 || l.pnr !== msg.pnr) && isTicket(l.pnr) && !l.recapture && msg.text.includes(`E-ticket ${l.pnr}`))
+          : [];
+        for (const sib of siblings) {
+          await queueUpload(s, job, sib.pnr, "capture", { text: msg.text, url: msg.url, screenshot_b64: null, recapture: false });
+          s.queue = s.queue.filter((l) => l.pnr !== sib.pnr);
+          s.doneLocal = [...s.doneLocal.slice(-500), sib.pnr];
+          s.session.done += 1;
+        }
+        if (siblings.length) console.info("[GDS]", `same booking as ${msg.pnr}: also filled ${siblings.map((x) => x.pnr).join(", ")}`);
+        s.statusLine = `Captured ✓ ${msg.pnr}${siblings.length ? ` + ${siblings.length} more on the same booking` : ""}`;
         s.warning = null;
         await refill(s);
         return instruction(s, { navigate: s.profile?.search_url });

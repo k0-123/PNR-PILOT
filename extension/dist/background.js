@@ -35,6 +35,10 @@ var outbox = {
 };
 //#endregion
 //#region src/shared.ts
+/** The lookup key is a 13-digit e-ticket number (e.g. Saudia searches by ticket), not a PNR. */
+function isTicket(key) {
+	return /^\d{13}$/.test(key);
+}
 /** Chrome match pattern ("https://host/*", "http://127.0.0.1/*") -> does `url` match it? Ports are ignored. */
 function matchesPattern(url, pattern) {
 	const m = /^(\*|https?):\/\/([^/]+)(\/.*)$/.exec(pattern);
@@ -321,7 +325,20 @@ async function onContent(msg, sender) {
 					advance(s);
 					s.session.done += 1;
 				}
-				s.statusLine = `Captured ✓ ${msg.pnr}`;
+				const siblings = msg.text.startsWith("SAUDIA BOOKING (read from Saudia's booking API)") ? s.queue.filter((l, i) => (i > 0 || l.pnr !== msg.pnr) && isTicket(l.pnr) && !l.recapture && msg.text.includes(`E-ticket ${l.pnr}`)) : [];
+				for (const sib of siblings) {
+					await queueUpload(s, job, sib.pnr, "capture", {
+						text: msg.text,
+						url: msg.url,
+						screenshot_b64: null,
+						recapture: false
+					});
+					s.queue = s.queue.filter((l) => l.pnr !== sib.pnr);
+					s.doneLocal = [...s.doneLocal.slice(-500), sib.pnr];
+					s.session.done += 1;
+				}
+				if (siblings.length) console.info("[GDS]", `same booking as ${msg.pnr}: also filled ${siblings.map((x) => x.pnr).join(", ")}`);
+				s.statusLine = `Captured ✓ ${msg.pnr}${siblings.length ? ` + ${siblings.length} more on the same booking` : ""}`;
 				s.warning = null;
 				await refill(s);
 				return instruction(s, { navigate: s.profile?.search_url });

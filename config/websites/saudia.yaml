@@ -28,11 +28,13 @@ focus_after_fill: surname          # Last name is the second box: press Enter th
 open_form:
   selector: 'input[formcontrolname="lastName"], input[formcontrolname="eticketnum"], input[placeholder*="E-Ticket" i], input[aria-label*="E-Ticket" i], input[placeholder*="Booking reference" i], input[aria-label*="Booking reference" i]'
 auto_submit:
-  # Saudia is protected by Imperva ("Pardon Our Interruption"), stricter than MH: slower, wider
-  # jitter. Auto-continue switches itself off at the first block page.
+  # Saudia is protected by Imperva ("Pardon Our Interruption"). Auto-continue switches itself off
+  # at the first block page. The gap counts from the previous search, and one search plus the
+  # reload of the form already takes a few seconds, so 2-3.5 s adds almost no extra wait ("as fast
+  # as possible", 2026-11-03; was 8-14 s). If Imperva starts blocking, raise these to 4000-7000.
   allowed: true
-  min_gap_ms: 8000
-  max_gap_ms: 14000
+  min_gap_ms: 2000
+  max_gap_ms: 3500
   button_text: "Continue"          # the popup's green Continue button (image copy 42.png)
 result_detect:
   # The search form is .../manage/manage-booking (with a hyphen); the result is .../managemybooking.
