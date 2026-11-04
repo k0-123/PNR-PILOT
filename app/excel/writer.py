@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import random
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -147,7 +148,7 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
     # The searched e-ticket (Excel #1's own column) shows in the result's "E-Ticket Number" column.
     split = base_headers.index("E-Ticket Number")
     headers = [*base_headers[:split],
-               *[f.label for f in result_fields.fields], "Email", "Code", "Lookup Status",
+               *[f.label for f in result_fields.fields], "Email", "Code", "Nation", "Lookup Status",
                "Error", *base_headers[split + 1:], "Edited Surname", "Edited PNR",
                "Attempts", "Looked Up At", "Looked Up By", "Source"]
     rows = []
@@ -166,7 +167,7 @@ def final_table(db_rows, result_fields) -> tuple[list[str], list[list]]:
         rows.append([
             *base[:split],
             *[data.get(f.key) for f in result_fields.fields], _email(r, used),
-            _code(r), r["lookup_status"] if eligible else None, r["error_message"],
+            _code(r), _nation(r), r["lookup_status"] if eligible else None, r["error_message"],
             *base[split + 1:], r["edited_surname"], r["edited_pnr"],
             r["attempts"] or None, r["lookup_finished_at"],
             _get(r, "looked_up_by"), _source(r) if eligible else None,
@@ -189,6 +190,15 @@ def _code(r) -> str:
     re-export."""
     n = (int(r["id"]) * 15_485_863 + 3_456_789) % 26_000_000   # multiplier coprime to 26M
     return f"{chr(65 + n // 1_000_000)}{n % 1_000_000:06d}"
+
+
+NATIONS = ("Afghanistan", "Albania")
+
+
+def _nation(r) -> str:
+    """Afghanistan or Albania, picked at random per row (seeded by the row id, so a row
+    keeps the same nation on re-export)."""
+    return random.Random(int(r["id"]) * 7_919 + 13).choice(NATIONS)
 
 
 def _get(r, key):
