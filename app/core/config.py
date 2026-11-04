@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     lease_minutes: float = Field(10, gt=0)
     max_capture_text_kb: int = Field(512, gt=0)
     max_capture_screenshot_mb: float = Field(8, gt=0)
+    # AlFursan signups (app/signups.py): the worker reads the signup emails from Mailflare's API.
+    mailflare_url: str = "https://mail.pnrcaptain.com"
+    mailflare_api_key: SecretStr = SecretStr("")
+    signup_email_domain: str = "pnrcaptain.com"
 
     @property
     def extension_origins(self) -> list[str]:
@@ -71,7 +75,7 @@ class Settings(BaseSettings):
 
     def secret_values(self) -> list[str]:
         """Raw secret strings, for log redaction."""
-        return [s.get_secret_value() for s in (self.gemini_api_key, self.app_password)
+        return [s.get_secret_value() for s in (self.gemini_api_key, self.app_password, self.mailflare_api_key)
                 if s.get_secret_value()]
 
 

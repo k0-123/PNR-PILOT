@@ -247,6 +247,50 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_jobs_user ON jobs(user_id);
     CREATE INDEX idx_flt_ledger_user ON flt_ledger(user_id, kind);
     """,
+    # v9: AlFursan signups (app/signups.py). One per passenger row; the generated email address
+    # links the Saudia/AlFursan emails back to the row. The membership number goes to the Excel.
+    """
+    CREATE TABLE signups (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id          INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        row_id          INTEGER NOT NULL UNIQUE REFERENCES rows(id) ON DELETE CASCADE,
+        email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        status          TEXT NOT NULL DEFAULT 'FILLED',  -- FILLED / ACTIVATION_SENT / ACTIVATED / NEEDS_BROWSER / CAPTURED / FAILED
+        activation_url  TEXT,
+        membership_no   TEXT,
+        note            TEXT,
+        seen_messages   TEXT NOT NULL DEFAULT '[]',
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );
+    CREATE INDEX idx_signups_status ON signups(status);
+    """,
+    # v10: AlFursan signup batches from an uploaded passenger Excel (app/signups.py). Each person
+    # keeps the Excel row as JSON; the email (firstname@domain) links Saudia's emails back.
+    """
+    CREATE TABLE signup_batches (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER,
+        name        TEXT NOT NULL,
+        headers     TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+    );
+    CREATE TABLE batch_people (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id        INTEGER NOT NULL REFERENCES signup_batches(id) ON DELETE CASCADE,
+        n               INTEGER NOT NULL,
+        row_id          INTEGER REFERENCES rows(id) ON DELETE SET NULL,  -- set when the batch came from a job
+        data_json       TEXT NOT NULL,
+        email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        status          TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING / FILLED / SUBMITTED / ACTIVATED / NEEDS_BROWSER / CAPTURED / SKIPPED
+        activation_url  TEXT,
+        membership_no   TEXT,
+        note            TEXT,
+        seen_messages   TEXT NOT NULL DEFAULT '[]',
+        updated_at      TEXT NOT NULL
+    );
+    CREATE INDEX idx_batch_people ON batch_people(batch_id, status);
+    """,
 ]
 
 _JOB_UPDATABLE = {"name", "status", "website_config_name", "error_message", "extraction_started_at",
@@ -442,9 +486,10 @@ class Database:
                       COALESCE(r.edited_first_name, r.first_name) AS effective_first_name,
                       COALESCE(r.edited_pnr, r.pnr) AS effective_pnr,
                       lr.result_json, lr.page_text_path, lr.screenshot_path,
-                      lk.looked_up_by, lk.page_url
+                      lk.looked_up_by, lk.page_url, COALESCE(su.membership_no, (SELECT bp.membership_no FROM batch_people bp WHERE bp.row_id = r.id AND bp.membership_no IS NOT NULL LIMIT 1)) AS alfursan_no
                FROM rows r JOIN images i ON i.id = r.image_id
                LEFT JOIN lookup_results lr ON lr.row_id = r.id
+               LEFT JOIN signups su ON su.row_id = r.id
                LEFT JOIN lookups lk ON lk.job_id = r.job_id AND lk.pnr = COALESCE(r.edited_pnr, r.pnr)"""
 
     def get_rows(self, job_id: int) -> list[sqlite3.Row]:

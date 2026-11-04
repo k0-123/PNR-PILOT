@@ -34,6 +34,7 @@ from app.extraction.pipeline import extract_job
 from app.jobs import export_final
 from app.lookup import page_results
 from app.lookup.gds_screens import process_screen
+from app import signups
 
 log = logging.getLogger("app.worker")
 
@@ -42,6 +43,7 @@ HEARTBEAT_SECONDS = 5.0
 STALE_SECONDS = 120.0
 CLEANUP_EVERY_SECONDS = 3600.0
 LIVE_EXCEL_SECONDS = 30.0
+MAIL_POLL_SECONDS = 30.0
 LIVE_STATUSES = ("LOOKING_UP", "PAUSED", "READY_FOR_LOOKUP", "COMPLETED", "COMPLETED_WITH_ERRORS")
 
 
@@ -55,6 +57,7 @@ class Worker:
         self.current_job: int | None = None
         self.stopping = threading.Event()
         self._last_cleanup = 0.0
+        self._last_mail = 0.0
         self._exported: dict[int, tuple[str, float]] = {}  # job -> (data fingerprint, time)
 
     # --------------------------------------------------------------- loop
@@ -80,6 +83,7 @@ class Worker:
         """Housekeeping + at most one job. Returns True if a job was processed."""
         self.db.worker_heartbeat(self.id, os.getpid(), socket.gethostname())
         self._maybe_cleanup()
+        self._maybe_poll_mail()
         for job_id in self.db.recover_stale_jobs(STALE_SECONDS):
             log.warning("Re-queued job from a stopped worker", extra={"job_id": job_id})
         self._finish_and_export()
@@ -92,6 +96,16 @@ class Worker:
         finally:
             self.current_job = None
         return True
+
+    def _maybe_poll_mail(self) -> None:
+        """AlFursan signup emails (app/signups.py), every MAIL_POLL_SECONDS."""
+        if time.monotonic() - self._last_mail < MAIL_POLL_SECONDS:
+            return
+        self._last_mail = time.monotonic()
+        try:
+            signups.poll_mail(self.db, self.settings)
+        except Exception:  # noqa: BLE001 - mail must never stop the worker
+            log.exception("Signup mail poll failed")
 
     # --------------------------------------------------------------- jobs
     def _extract(self, job_id: int) -> None:

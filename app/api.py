@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from app import lookups
+import base64
+
+from app import lookups, signup_batches, signups
 from app.core.config import SiteProfile, Settings, get_settings
 from app.core.db import Database
 from app.core.logging_setup import setup_logging
@@ -37,6 +39,11 @@ class CaptureIn(BaseModel):
 class StatusIn(BaseModel):
     status: str
     note: str | None = Field(None, max_length=300)
+
+
+class BatchIn(BaseModel):
+    name: str = Field("Excel", max_length=200)
+    xlsx_b64: str = Field(..., max_length=15_000_000)
 
 
 class ReleaseIn(BaseModel):
@@ -152,6 +159,77 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def progress(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
         own_job(db, job_id, token)
         return lookups.progress(db, job_id)
+
+    # ------------------------------------------------------------ AlFursan signups
+    @app.get("/api/signup/jobs")
+    def signup_jobs(token=Depends(auth), db: Database = Depends(get_db)):
+        return [{"id": j["id"], "name": j["name"]} for j in db.list_jobs(token["user_id"])][:50]
+
+    @app.get("/api/jobs/{job_id}/signup-rows")
+    def signup_rows(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
+        return signups.rows_for_job(db, job_id)
+
+    @app.post("/api/jobs/{job_id}/rows/{row_id}/signup")
+    def signup_create(job_id: int, row_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
+        try:
+            return signups.create(db, settings, job_id, row_id)
+        except KeyError:
+            raise LookupRequestError("row not found in this job", 404) from None
+
+    @app.get("/api/signups/needs-browser")
+    def signup_needs_browser(token=Depends(auth), db: Database = Depends(get_db)):
+        return signups.needs_browser(db, token["user_id"])
+
+    @app.post("/api/signups/{ref}/opened")
+    def signup_opened(ref: str, token=Depends(auth), db: Database = Depends(get_db)):
+        return {"ok": signups.mark_opened(db, ref, token["user_id"])}
+
+    # ------------------------------------------------- AlFursan batches (uploaded Excel)
+    def _batch(fn, *args):
+        try:
+            return fn(*args)
+        except KeyError:
+            raise LookupRequestError("batch not found", 404) from None
+        except signup_batches.BatchError as exc:
+            raise LookupRequestError(str(exc), 400) from None
+
+    @app.post("/api/signup-batches")
+    def batch_upload(body: BatchIn, token=Depends(auth), db: Database = Depends(get_db)):
+        try:
+            data = base64.b64decode(body.xlsx_b64, validate=True)
+        except ValueError:
+            raise LookupRequestError("bad file data", 400) from None
+        return _batch(signup_batches.create_batch, db, settings, token["user_id"], body.name, data)
+
+    @app.post("/api/jobs/{job_id}/signup-batch")
+    def batch_from_job(job_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        own_job(db, job_id, token)
+        return _batch(signup_batches.create_batch_from_job, db, settings, token["user_id"], job_id)
+
+    @app.get("/api/signup-batches")
+    def batch_list(token=Depends(auth), db: Database = Depends(get_db)):
+        return signup_batches.list_batches(db, token["user_id"])
+
+    @app.post("/api/signup-batches/{batch_id}/next")
+    def batch_next(batch_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        return {"person": _batch(signup_batches.next_person, db, batch_id, token["user_id"])}
+
+    @app.post("/api/signup-people/{person_id}/{status}")
+    def person_status(person_id: int, status: str, token=Depends(auth), db: Database = Depends(get_db)):
+        return {"ok": _batch(signup_batches.set_person_status, db, person_id, token["user_id"], status.upper())}
+
+    @app.get("/api/signup-batches/{batch_id}/progress")
+    def batch_progress(batch_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        return _batch(signup_batches.progress, db, batch_id, token["user_id"])
+
+    @app.get("/api/signup-batches/{batch_id}/result.xlsx")
+    def batch_result(batch_id: int, token=Depends(auth), db: Database = Depends(get_db)):
+        path = settings.data_dir / "outputs" / f"alfursan_batch_{batch_id}.xlsx"
+        _batch(signup_batches.batch_excel, db, batch_id, token["user_id"], path)
+        return FileResponse(path, filename=f"alfursan_batch_{batch_id}.xlsx",
+                            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     return app
 
